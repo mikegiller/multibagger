@@ -14,19 +14,38 @@ st.divider()
 
 st.subheader("Available Tools")
 
-col1, col2, col3, col4 = st.columns(4)
+# Main prominent tools
+col1, col2 = st.columns(2)
 
 with col1:
-    st.page_link("pages/VerticalCallSpread.py", label="📈 Vertical Call Spread Finder", icon="📊")
+    st.page_link(
+        "pages/optionsData_v3.py", 
+        label="Options Data Explorer", 
+        icon="📈",
+        use_container_width=True
+    )
 
 with col2:
-    st.page_link("pages/VerticalPutSpread.py", label="📉 Vertical Put Spread Finder", icon="📉")
+    st.page_link(
+        "pages/Buy_vs_Sell.py", 
+        label="Buy vs Sell Pressure", 
+        icon="📊",
+        use_container_width=True
+    )
 
-with col3:
-    st.page_link("pages/optionsData_v3.py", label="📄 Options Data Explorer", icon="🧾")
-
-with col4:
-    st.page_link("pages/Buy_vs_Sell.py", label="Buy vs Sell", icon="🧾")
+# Collapsed section for other tools
+with st.expander("Other ▼", expanded=False):
+    st.page_link(
+        "pages/VerticalCallSpread.py", 
+        label="Vertical Call Spread Finder", 
+        icon="📈"
+    )
+    
+    st.page_link(
+        "pages/VerticalPutSpread.py", 
+        label="Vertical Put Spread Finder", 
+        icon="📉"
+    )
 
 st.divider()
 st.info("Use the navigation links above or the sidebar to launch each specialized app.")
