@@ -19,7 +19,7 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.page_link(
-        "pages/optionsData_v3.py", 
+        "pages/Options_Data_Explorer.py", 
         label="Options Data Explorer", 
         icon="📈",
         use_container_width=True
@@ -27,7 +27,7 @@ with col1:
 
 with col2:
     st.page_link(
-        "pages/Buy_vs_Sell.py", 
+        "pages/Buy_vs_Sell_Pressure.py", 
         label="Buy vs Sell Pressure", 
         icon="📊",
         use_container_width=True
@@ -36,13 +36,13 @@ with col2:
 # Collapsed section for other tools
 with st.expander("Other ▼", expanded=False):
     st.page_link(
-        "pages/VerticalCallSpread.py", 
+        "pages/Vertical_Call_Spread.py", 
         label="Vertical Call Spread Finder", 
         icon="📈"
     )
     
     st.page_link(
-        "pages/VerticalPutSpread.py", 
+        "pages/Vertical_Put_Spread.py", 
         label="Vertical Put Spread Finder", 
         icon="📉"
     )
