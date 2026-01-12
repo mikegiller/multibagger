@@ -6,9 +6,47 @@ from datetime import datetime, date
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+# Optional: Google Gemini (only needed for AI analysis)
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+
 st.set_page_config(page_title="Swing Trade / Covered Call Scanner", layout="wide")
 
 st.title("Short Term Swing + Premium Selling Helper")
+
+# ─── Gemini API Key Setup ──────────────────────────────────────────
+with st.sidebar:
+    st.header("🤖 AI Analysis Settings")
+    
+    if not GEMINI_AVAILABLE:
+        st.warning("⚠️ Google Gemini not installed")
+        st.code("pip install google-generativeai", language="bash")
+        gemini_api_key = None
+    else:
+        gemini_api_key = st.text_input(
+            "Gemini API Key", 
+            type="password",
+            help="Get free API key at: https://aistudio.google.com/app/apikey",
+            value=""
+        )
+        
+        if gemini_api_key:
+            try:
+                genai.configure(api_key=gemini_api_key)
+                st.success("✅ Gemini API configured")
+            except Exception as e:
+                st.error(f"❌ API configuration failed: {str(e)}")
+        else:
+            st.info("💡 Add API key to enable AI analysis")
+        
+        st.markdown("---")
+        st.caption("**Free Tier**: 1,500 requests/day")
+        st.caption("[Get API Key →](https://aistudio.google.com/app/apikey)")
+
+st.write("")  # Add spacing
 
 ticker = st.text_input("Ticker", value="NVDA", max_chars=12).upper().strip()
 if not ticker:
@@ -180,9 +218,9 @@ if show_support:
 fig.add_trace(go.Scatter(
     x=df.index,
     y=df['RSI'],
-    line=dict(color='rgba(255, 193, 7, 0.5)', width=3, dash='dot'),
+    line=dict(color='rgba(255, 193, 7, 0.5)', width=1, dash='dot'),
     name='RSI(14)',
-    opacity=1
+    opacity=0.6
 ), row=1, col=1, secondary_y=True)
 
 # RSI reference lines on secondary y-axis (very subtle)
@@ -352,3 +390,175 @@ except Exception as e:
 st.markdown("---")
 st.caption("**Tip:** Look for strikes near support/resistance with good premium (Mid) and elevated IV%")
 st.caption("**Red background** ≈ near resistance   |   **Cyan background** ≈ near support")
+
+# ─── AI ANALYSIS SECTION ───────────────────────────────────────────
+st.markdown("---")
+st.header("🤖 AI Trading Analysis")
+
+# Initialize chat history in session state
+if "chat_history_swing" not in st.session_state:
+    st.session_state.chat_history_swing = []
+if "initial_context_swing" not in st.session_state:
+    st.session_state.initial_context_swing = None
+
+if not GEMINI_AVAILABLE:
+    st.error("❌ Google Gemini package not installed")
+    st.code("pip install google-generativeai", language="bash")
+    st.info("Install the package and restart the app to enable AI analysis")
+elif not gemini_api_key:
+    st.warning("⚠️ Enter your Gemini API key in the sidebar to enable AI analysis")
+    st.info("Get a free API key at: https://aistudio.google.com/app/apikey")
+else:
+    # Initial Analysis Button
+    if st.button("🔍 Generate AI Analysis", type="primary", use_container_width=True):
+        with st.spinner("Analyzing market data with Gemini AI..."):
+            try:
+                # Prepare context for AI
+                latest_rsi = df['RSI'].iloc[-1]
+                rsi_5_ago = df['RSI'].iloc[-5] if len(df) >= 5 else df['RSI'].iloc[0]
+                rsi_trend = "rising" if latest_rsi > rsi_5_ago else "falling"
+                
+                price_change = ((df['Close'].iloc[-1] - df['Close'].iloc[0]) / df['Close'].iloc[0]) * 100
+                
+                support_levels = [f"${x:.2f}" for x in recent_lows]
+                resistance_levels = [f"${x:.2f}" for x in recent_highs]
+                
+                spike_count = int(df['volume_spike'].sum())
+                
+                # Determine RSI condition
+                if latest_rsi > 70:
+                    rsi_status = "OVERBOUGHT (>70)"
+                elif latest_rsi < 30:
+                    rsi_status = "OVERSOLD (<30)"
+                else:
+                    rsi_status = "NEUTRAL (30-70)"
+                
+                # Get last 10 bars for recent pattern
+                recent_bars = df.tail(10)[['Open', 'High', 'Low', 'Close', 'Volume', 'RSI']].to_string()
+                
+                context = f"""
+Analyze this stock and provide a clear trading recommendation.
+
+TICKER: {ticker}
+TIMEFRAME: {periods[period]}
+CURRENT PRICE: ${current_price:.2f}
+
+TECHNICAL INDICATORS:
+- RSI(14): {latest_rsi:.1f} - {rsi_status} (trend: {rsi_trend})
+- Support Levels: {', '.join(support_levels)}
+- Resistance Levels: {', '.join(resistance_levels)}
+- Price Change ({period}): {price_change:+.2f}%
+- Volume Spikes: {spike_count} occurrences
+
+PRICE RANGE:
+- High: ${df['High'].max():.2f}
+- Low: ${df['Low'].min():.2f}
+- Average Volume: {df['Volume'].mean():.0f}
+
+RECENT PRICE ACTION (Last 10 bars):
+{recent_bars}
+
+Provide analysis in this format:
+
+1. MARKET SENTIMENT: (1-2 sentences about current trend and momentum)
+
+2. KEY LEVELS TO WATCH:
+   - Critical support: [price]
+   - Critical resistance: [price]
+
+3. RSI INTERPRETATION: (What does current RSI tell us?)
+
+4. RECOMMENDATION: **BUY** / **SELL** / **HOLD**
+   Reasoning: (2-3 sentences explaining why)
+
+5. RISK LEVEL: Low / Medium / High
+   Why: (1 sentence)
+
+6. ACTION PLAN:
+   - Entry: [specific price or condition]
+   - Stop Loss: [price]
+   - Target: [price]
+
+Be concise, specific, and actionable. Focus on swing trading (days to weeks).
+"""
+
+                # Store initial context for follow-ups
+                st.session_state.initial_context_swing = context
+                
+                # Call Gemini API
+                model = genai.GenerativeModel('gemini-2.5-flash')
+                response = model.generate_content(context)
+                
+                # Clear previous chat and add initial exchange
+                st.session_state.chat_history_swing = [
+                    {"role": "user", "content": "Analyze this stock data"},
+                    {"role": "assistant", "content": response.text}
+                ]
+                
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"Error generating analysis: {str(e)}")
+                st.info("Check your API key or try again. Error details above.")
+    
+    # Display chat history
+    if st.session_state.chat_history_swing:
+        st.markdown("### 💬 AI Conversation")
+        
+        # Display all messages
+        for i, msg in enumerate(st.session_state.chat_history_swing):
+            if msg["role"] == "user" and i > 0:  # Skip first generic prompt
+                with st.chat_message("user"):
+                    st.markdown(msg["content"])
+            elif msg["role"] == "assistant":
+                with st.chat_message("assistant"):
+                    st.markdown(msg["content"])
+        
+        # Follow-up question input
+        st.markdown("---")
+        follow_up = st.text_input(
+            "💭 Ask a follow-up question:",
+            placeholder="e.g., What if the price breaks above resistance? Should I use options?",
+            key="follow_up_swing"
+        )
+        
+        col1, col2 = st.columns([1, 5])
+        with col1:
+            send_button = st.button("Send", type="primary", use_container_width=True)
+        with col2:
+            if st.button("🗑️ Clear Conversation", use_container_width=True):
+                st.session_state.chat_history_swing = []
+                st.session_state.initial_context_swing = None
+                st.rerun()
+        
+        if send_button and follow_up:
+            with st.spinner("Thinking..."):
+                try:
+                    # Build conversation history for context
+                    conversation = [{"role": "user", "parts": [st.session_state.initial_context_swing]}]
+                    
+                    for msg in st.session_state.chat_history_swing:
+                        conversation.append({
+                            "role": "user" if msg["role"] == "user" else "model",
+                            "parts": [msg["content"]]
+                        })
+                    
+                    # Add new question
+                    conversation.append({"role": "user", "parts": [follow_up]})
+                    
+                    # Call Gemini with full conversation
+                    model = genai.GenerativeModel('gemini-2.5-flash')
+                    chat = model.start_chat(history=conversation[:-1])
+                    response = chat.send_message(follow_up)
+                    
+                    # Add to chat history
+                    st.session_state.chat_history_swing.append({"role": "user", "content": follow_up})
+                    st.session_state.chat_history_swing.append({"role": "assistant", "content": response.text})
+                    
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"Error: {str(e)}")
+        
+        # Disclaimer
+        st.warning("⚠️ **Disclaimer**: This is AI-generated analysis for educational purposes only. Not financial advice. Always do your own research and consult with a financial advisor.")

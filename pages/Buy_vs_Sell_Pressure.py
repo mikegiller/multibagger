@@ -7,6 +7,18 @@ from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import numpy as np
 
+# SSL fix for Mac
+import ssl
+import certifi
+ssl._create_default_https_context = ssl._create_unverified_context
+
+# Optional: Google Gemini (only needed for AI analysis)
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+
 # === Page Config ===
 st.set_page_config(page_title="Pressure Dashboard", layout="wide", initial_sidebar_state="expanded")
 
@@ -20,6 +32,35 @@ period_options = {
 }
 period_name = st.sidebar.selectbox("Period", list(period_options.keys()), index=0)
 period = period_options[period_name]
+
+# --- Gemini API Key Setup (in sidebar) ──────────────────────────────
+st.sidebar.markdown("---")
+st.sidebar.header("🤖 AI Analysis Settings")
+
+if not GEMINI_AVAILABLE:
+    st.sidebar.warning("⚠️ Google Gemini not installed")
+    st.sidebar.code("pip install google-generativeai", language="bash")
+    gemini_api_key = None
+else:
+    gemini_api_key = st.sidebar.text_input(
+        "Gemini API Key", 
+        type="password",
+        help="Get free API key at: https://aistudio.google.com/app/apikey",
+        value=""
+    )
+    
+    if gemini_api_key:
+        try:
+            genai.configure(api_key=gemini_api_key)
+            st.sidebar.success("✅ Gemini API configured")
+        except Exception as e:
+            st.sidebar.error(f"❌ API configuration failed: {str(e)}")
+    else:
+        st.sidebar.info("💡 Add API key to enable AI analysis")
+    
+    st.sidebar.markdown("---")
+    st.sidebar.caption("**Free Tier**: 1,500 requests/day")
+    st.sidebar.caption("[Get API Key →](https://aistudio.google.com/app/apikey)")
 
 if st.sidebar.button("Reset Zoom & Settings"):
     st.session_state.clear()
@@ -331,3 +372,220 @@ else:
 if st.button("🔄 Refresh Data"):
     st.cache_data.clear()
     st.rerun()
+
+# ─── AI ANALYSIS SECTION ───────────────────────────────────────────
+st.markdown("---")
+st.header("🤖 AI Pressure & Momentum Analysis")
+
+# Initialize chat history in session state
+if "chat_history_pressure" not in st.session_state:
+    st.session_state.chat_history_pressure = []
+if "initial_context_pressure" not in st.session_state:
+    st.session_state.initial_context_pressure = None
+
+if not GEMINI_AVAILABLE:
+    st.error("❌ Google Gemini package not installed")
+    st.code("pip install google-generativeai", language="bash")
+    st.info("Install the package and restart the app to enable AI analysis")
+elif not gemini_api_key:
+    st.warning("⚠️ Enter your Gemini API key in the sidebar to enable AI analysis")
+    st.info("Get a free API key at: https://aistudio.google.com/app/apikey")
+else:
+    # Initial Analysis Button
+    if st.button("🔍 Generate AI Pressure Analysis", type="primary", use_container_width=True):
+        with st.spinner("Analyzing buying/selling pressure with Gemini AI..."):
+            try:
+                # Prepare context for AI
+                latest_close = df.Close.iloc[-1]
+                price_change = ((latest_close - df.Close.iloc[0]) / df.Close.iloc[0]) * 100
+                
+                # VWAP analysis
+                vwap_current = df.VWAP.iloc[-1]
+                vwap_diff_pct = ((latest_close - vwap_current) / vwap_current) * 100
+                vwap_position = "ABOVE" if latest_close > vwap_current else "BELOW"
+                
+                # OBV trend
+                obv_current = df.OBV.iloc[-1]
+                obv_20_ago = df.OBV.iloc[-20] if len(df) > 20 else df.OBV.iloc[0]
+                obv_change_pct = ((obv_current - obv_20_ago) / abs(obv_20_ago + 1)) * 100
+                obv_trend = "RISING" if obv_change_pct > 0 else "FALLING"
+                
+                # MACD analysis
+                macd_current = df.MACD.iloc[-1]
+                signal_current = df.Signal.iloc[-1]
+                macd_hist = df.MACD_Hist.iloc[-1]
+                macd_signal = "BULLISH CROSS" if macd_current > signal_current else "BEARISH CROSS"
+                
+                # Volume analysis
+                vol_ratio = latest_vol / avg_vol if avg_vol > 0 else 1
+                vol_status = "HIGH" if vol_ratio > 1.5 else "NORMAL" if vol_ratio > 0.5 else "LOW"
+                
+                # POC analysis
+                poc_diff_pct = ((latest_close - poc_price) / poc_price) * 100
+                poc_position = "ABOVE" if latest_close > poc_price else "BELOW"
+                
+                # Unusual options activity
+                unusual_activity = ""
+                if not spikes.empty:
+                    unusual_activity = "\n".join([
+                        f"- {r['type']} ${r['strike']:,}: {r['volume']:,.0f} volume ({r['x']}x avg) exp {r['expiry']}"
+                        for _, r in spikes.head(5).iterrows()
+                    ])
+                else:
+                    unusual_activity = "No significant unusual activity detected"
+                
+                # Get recent price action (last 10 bars)
+                recent_bars = df.tail(10)[['Open', 'High', 'Low', 'Close', 'Volume', 'OBV', 'MACD']].to_string()
+                
+                context = f"""
+Analyze this stock's buying/selling pressure and momentum to provide trading insights.
+
+TICKER: {ticker}
+TIMEFRAME: {period_name}
+CURRENT PRICE: ${latest_close:.2f}
+PRICE CHANGE ({period_name}): {price_change:+.2f}%
+
+PRESSURE SCORE: {score}/100 ({"BULLISH" if score >= 65 else "NEUTRAL" if score >= 45 else "BEARISH"})
+
+TECHNICAL INDICATORS:
+- VWAP: ${vwap_current:.2f} (Price is {vwap_position} by {abs(vwap_diff_pct):.2f}%)
+- POC (Point of Control): ${poc_price:.2f} (Price is {poc_position} by {abs(poc_diff_pct):.2f}%)
+- OBV: {obv_current:,.0f} ({obv_trend}, {obv_change_pct:+.1f}% change)
+- MACD: {macd_current:.2f} (Signal: {signal_current:.2f}, Histogram: {macd_hist:.2f})
+- MACD Status: {macd_signal}
+
+VOLUME ANALYSIS:
+- Latest Volume: {latest_vol:,.0f}
+- 20-day Average: {avg_vol:,.0f}
+- Volume Status: {vol_status} ({vol_ratio:.1f}x average)
+
+OPTIONS FLOW (Long-dated):
+- Put/Call Ratio: {pcr:.2f} ({"Bullish" if pcr < 0.7 else "Bearish" if pcr > 1.3 else "Neutral"})
+- Total Options Volume (6m+): {opt_vol:,.0f}
+
+UNUSUAL OPTIONS ACTIVITY:
+{unusual_activity}
+
+RECENT PRICE ACTION (Last 10 bars):
+{recent_bars}
+
+SCORE BREAKDOWN:
+{chr(10).join([f"- {k}: {v:+.1f}" for k, v in score_components.items()])}
+
+Provide analysis in this format:
+
+1. PRESSURE ASSESSMENT: (2-3 sentences on dominant pressure - buying or selling - and confidence level)
+
+2. KEY TECHNICAL SIGNALS:
+   - VWAP Significance: [what VWAP position tells us]
+   - OBV Interpretation: [what OBV trend indicates about accumulation/distribution]
+   - MACD Status: [momentum confirmation or divergence]
+
+3. VOLUME PROFILE:
+   - Current activity level: [interpretation of volume vs average]
+   - What this suggests: [institutional interest, retail activity, etc.]
+
+4. OPTIONS MARKET SENTIMENT:
+   - P/C Ratio interpretation: [what options traders are positioning for]
+   - Unusual activity significance: [if any large bets stand out]
+
+5. RECOMMENDATION: **BUY** / **SELL** / **HOLD** / **WATCH**
+   Reasoning: (2-3 sentences explaining the call based on pressure analysis)
+
+6. KEY LEVELS TO WATCH:
+   - Immediate support: [price level]
+   - Immediate resistance: [price level]
+   - Critical level: [VWAP, POC, or other significant level]
+
+7. TRADE SETUP (if actionable):
+   - Entry: [specific condition or price]
+   - Stop Loss: [price level based on technicals]
+   - Target: [price level]
+   - Risk/Reward: [ratio]
+
+8. RISK FACTORS:
+   - [List 2-3 key risks to the thesis]
+
+Be specific, actionable, and focused on pressure dynamics and momentum. This is for short-term to medium-term trading.
+"""
+
+                # Store initial context for follow-ups
+                st.session_state.initial_context_pressure = context
+                
+                # Call Gemini API
+                model = genai.GenerativeModel('gemini-2.5-flash')
+                response = model.generate_content(context)
+                
+                # Clear previous chat and add initial exchange
+                st.session_state.chat_history_pressure = [
+                    {"role": "user", "content": "Analyze this pressure and momentum data"},
+                    {"role": "assistant", "content": response.text}
+                ]
+                
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"Error generating analysis: {str(e)}")
+                st.info("Check your API key or try again. Error details above.")
+    
+    # Display chat history
+    if st.session_state.chat_history_pressure:
+        st.markdown("### 💬 AI Conversation")
+        
+        # Display all messages
+        for i, msg in enumerate(st.session_state.chat_history_pressure):
+            if msg["role"] == "user" and i > 0:  # Skip first generic prompt
+                with st.chat_message("user"):
+                    st.markdown(msg["content"])
+            elif msg["role"] == "assistant":
+                with st.chat_message("assistant"):
+                    st.markdown(msg["content"])
+        
+        # Follow-up question input
+        st.markdown("---")
+        follow_up = st.text_input(
+            "💭 Ask a follow-up question:",
+            placeholder="e.g., What if VWAP is breached? How does unusual options activity affect this?",
+            key="follow_up_pressure"
+        )
+        
+        col1, col2 = st.columns([1, 5])
+        with col1:
+            send_button = st.button("Send", type="primary", use_container_width=True)
+        with col2:
+            if st.button("🗑️ Clear Conversation", use_container_width=True):
+                st.session_state.chat_history_pressure = []
+                st.session_state.initial_context_pressure = None
+                st.rerun()
+        
+        if send_button and follow_up:
+            with st.spinner("Thinking..."):
+                try:
+                    # Build conversation history for context
+                    conversation = [{"role": "user", "parts": [st.session_state.initial_context_pressure]}]
+                    
+                    for msg in st.session_state.chat_history_pressure:
+                        conversation.append({
+                            "role": "user" if msg["role"] == "user" else "model",
+                            "parts": [msg["content"]]
+                        })
+                    
+                    # Add new question
+                    conversation.append({"role": "user", "parts": [follow_up]})
+                    
+                    # Call Gemini with full conversation
+                    model = genai.GenerativeModel('gemini-2.5-flash')
+                    chat = model.start_chat(history=conversation[:-1])
+                    response = chat.send_message(follow_up)
+                    
+                    # Add to chat history
+                    st.session_state.chat_history_pressure.append({"role": "user", "content": follow_up})
+                    st.session_state.chat_history_pressure.append({"role": "assistant", "content": response.text})
+                    
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"Error: {str(e)}")
+        
+        # Disclaimer
+        st.warning("⚠️ **Disclaimer**: This is AI-generated analysis for educational purposes only. Not financial advice. Always do your own research and consult with a financial advisor.")

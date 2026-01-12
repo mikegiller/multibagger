@@ -12,6 +12,18 @@ from openpyxl.utils import get_column_letter
 from openpyxl.formatting.rule import CellIsRule
 import plotly.graph_objects as go
 
+# SSL fix for Mac
+import ssl
+import certifi
+ssl._create_default_https_context = ssl._create_unverified_context
+
+# Optional: Google Gemini (only needed for AI analysis)
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+
 # Current date as per user instruction
 TODAY = datetime(2026, 1, 6)
 
@@ -19,6 +31,35 @@ TODAY = datetime(2026, 1, 6)
 st.set_page_config(page_title="Call Options Viewer", layout="wide")
 st.title("📈 Call Options Viewer")
 st.write("Enter a ticker to view call options, toggle columns, and see return potential graph (positive only).")
+
+# --- Gemini API Key Setup (in sidebar) ──────────────────────────────
+with st.sidebar:
+    st.header("🤖 AI Analysis Settings")
+    
+    if not GEMINI_AVAILABLE:
+        st.warning("⚠️ Google Gemini not installed")
+        st.code("pip install google-generativeai", language="bash")
+        gemini_api_key = None
+    else:
+        gemini_api_key = st.text_input(
+            "Gemini API Key", 
+            type="password",
+            help="Get free API key at: https://aistudio.google.com/app/apikey",
+            value=""
+        )
+        
+        if gemini_api_key:
+            try:
+                genai.configure(api_key=gemini_api_key)
+                st.success("✅ Gemini API configured")
+            except Exception as e:
+                st.error(f"❌ API configuration failed: {str(e)}")
+        else:
+            st.info("💡 Add API key to enable AI analysis")
+        
+        st.markdown("---")
+        st.caption("**Free Tier**: 1,500 requests/day")
+        st.caption("[Get API Key →](https://aistudio.google.com/app/apikey)")
 
 # --- Session state ---
 for key in ["ticker_input", "expiry", "calls_data", "summary_data", "column_names"]:
@@ -371,3 +412,181 @@ if calls is not None and not calls.empty:
             file_name=f"{ticker_input}_CallOptions_{expiry}_formatted.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+# ─── AI ANALYSIS SECTION ───────────────────────────────────────────
+if calls is not None and summary_df is not None:
+    st.markdown("---")
+    st.header("🤖 AI Covered Call Analysis")
+    
+    # Initialize chat history in session state
+    if "chat_history_calls" not in st.session_state:
+        st.session_state.chat_history_calls = []
+    if "initial_context_calls" not in st.session_state:
+        st.session_state.initial_context_calls = None
+
+    if not GEMINI_AVAILABLE:
+        st.error("❌ Google Gemini package not installed")
+        st.code("pip install google-generativeai", language="bash")
+        st.info("Install the package and restart the app to enable AI analysis")
+    elif not gemini_api_key:
+        st.warning("⚠️ Enter your Gemini API key in the sidebar to enable AI analysis")
+        st.info("Get a free API key at: https://aistudio.google.com/app/apikey")
+    else:
+        # Initial Analysis Button
+        if st.button("🔍 Generate AI Covered Call Strategy", type="primary", use_container_width=True):
+            with st.spinner("Analyzing options data with Gemini AI..."):
+                try:
+                    # Prepare context for AI
+                    last_price = summary_df["Last Price"].iloc[0]
+                    days_to_expiry = summary_df["Days to Expiry"].iloc[0]
+                    
+                    # Get top 5 contracts by volume
+                    active_calls = calls[(calls["volume"] > 0) | (calls["openInterest"] > 10)].copy()
+                    
+                    # Convert percentage columns to numeric for analysis
+                    for col in column_names[:4]:  # First 4 percentage columns
+                        if col in active_calls.columns:
+                            active_calls[f"{col}_numeric"] = active_calls[col].str.rstrip('%').astype(float)
+                    
+                    top_volume = active_calls.nlargest(5, 'volume')[
+                        ['strike', 'middle', 'volume', 'openInterest', 'impliedVolatility']
+                    ].to_string(index=False)
+                    
+                    # Find optimal strike from chart (if available)
+                    optimal_strike_info = ""
+                    if best_strike is not None:
+                        optimal_strike_info = f"\nOptimal Strike (highest combined return): ${best_strike}"
+                    
+                    # Get IV percentile info
+                    avg_iv = active_calls['impliedVolatility'].mean()
+                    max_iv = active_calls['impliedVolatility'].max()
+                    min_iv = active_calls['impliedVolatility'].min()
+                    
+                    context = f"""
+Analyze this covered call opportunity and provide a clear recommendation.
+
+TICKER: {ticker_input}
+CURRENT STOCK PRICE: ${last_price:.2f}
+EXPIRATION: {expiry} ({days_to_expiry} days)
+
+IMPLIED VOLATILITY OVERVIEW:
+- Average IV: {avg_iv:.1f}%
+- Range: {min_iv:.1f}% to {max_iv:.1f}%
+
+TOP 5 STRIKES BY VOLUME:
+{top_volume}
+{optimal_strike_info}
+
+STRATEGY CONTEXT:
+This is for selling covered calls - the investor owns the stock and wants to generate premium income while potentially selling shares at a profit.
+
+Provide analysis in this format:
+
+1. MARKET CONDITIONS: (2-3 sentences about current IV environment and what it means for premium sellers)
+
+2. RECOMMENDED STRIKE(S):
+   - Best conservative strike: [strike] - Premium: $[middle] - IV: [IV%]
+   - Best aggressive strike: [strike] - Premium: $[middle] - IV: [IV%]
+   Reasoning: (Why these strikes? Consider distance from current price, premium, and upside capture)
+
+3. INCOME POTENTIAL:
+   - Annualized return if called away: [calculate based on premium + capital gain]
+   - Annualized return if not called: [based on premium only]
+
+4. RISK ASSESSMENT:
+   - Probability of assignment: [High/Medium/Low based on strike vs current price]
+   - Upside capped at: [strike price, calculate % gain from current]
+   - What to watch: [key price levels or events]
+
+5. RECOMMENDATION: **SELL CALLS** or **WAIT**
+   Reasoning: (2-3 sentences on timing, IV level, and strategy fit)
+
+6. ACTION PLAN:
+   - Suggested strike: $[price]
+   - Order type: [limit/market]
+   - Entry price: $[middle or slightly above bid]
+   - Exit strategy: [when to roll or close]
+
+Be specific with numbers. Focus on income generation and risk management for covered call sellers.
+"""
+
+                    # Store initial context for follow-ups
+                    st.session_state.initial_context_calls = context
+                    
+                    # Call Gemini API
+                    model = genai.GenerativeModel('gemini-2.5-flash')
+                    response = model.generate_content(context)
+                    
+                    # Clear previous chat and add initial exchange
+                    st.session_state.chat_history_calls = [
+                        {"role": "user", "content": "Analyze these covered call options"},
+                        {"role": "assistant", "content": response.text}
+                    ]
+                    
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"Error generating analysis: {str(e)}")
+                    st.info("Check your API key or try again. Error details above.")
+        
+        # Display chat history
+        if st.session_state.chat_history_calls:
+            st.markdown("### 💬 AI Conversation")
+            
+            # Display all messages
+            for i, msg in enumerate(st.session_state.chat_history_calls):
+                if msg["role"] == "user" and i > 0:  # Skip first generic prompt
+                    with st.chat_message("user"):
+                        st.markdown(msg["content"])
+                elif msg["role"] == "assistant":
+                    with st.chat_message("assistant"):
+                        st.markdown(msg["content"])
+            
+            # Follow-up question input
+            st.markdown("---")
+            follow_up = st.text_input(
+                "💭 Ask a follow-up question:",
+                placeholder="e.g., What if IV drops by 20%? Should I roll to a higher strike?",
+                key="follow_up_calls"
+            )
+            
+            col1, col2 = st.columns([1, 5])
+            with col1:
+                send_button = st.button("Send", type="primary", use_container_width=True)
+            with col2:
+                if st.button("🗑️ Clear Conversation", use_container_width=True):
+                    st.session_state.chat_history_calls = []
+                    st.session_state.initial_context_calls = None
+                    st.rerun()
+            
+            if send_button and follow_up:
+                with st.spinner("Thinking..."):
+                    try:
+                        # Build conversation history for context
+                        conversation = [{"role": "user", "parts": [st.session_state.initial_context_calls]}]
+                        
+                        for msg in st.session_state.chat_history_calls:
+                            conversation.append({
+                                "role": "user" if msg["role"] == "user" else "model",
+                                "parts": [msg["content"]]
+                            })
+                        
+                        # Add new question
+                        conversation.append({"role": "user", "parts": [follow_up]})
+                        
+                        # Call Gemini with full conversation
+                        model = genai.GenerativeModel('gemini-2.5-flash')
+                        chat = model.start_chat(history=conversation[:-1])
+                        response = chat.send_message(follow_up)
+                        
+                        # Add to chat history
+                        st.session_state.chat_history_calls.append({"role": "user", "content": follow_up})
+                        st.session_state.chat_history_calls.append({"role": "assistant", "content": response.text})
+                        
+                        st.rerun()
+                        
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
+            
+            # Disclaimer
+            st.warning("⚠️ **Disclaimer**: This is AI-generated analysis for educational purposes only. Not financial advice. Options trading involves significant risk. Always do your own research and consult with a financial advisor.")
