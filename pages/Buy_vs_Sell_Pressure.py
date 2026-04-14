@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import numpy as np
+import json, os
 
 # Optional: Google Gemini (only needed for AI analysis)
 try:
@@ -17,9 +18,33 @@ except ImportError:
 # === Page Config ===
 st.set_page_config(page_title="Pressure Dashboard", layout="wide", initial_sidebar_state="expanded")
 
-# === Sidebar ===
-st.sidebar.header("Controls")
-ticker = st.sidebar.text_input("Ticker", "SPY").upper()
+st.title("Buying vs Selling Pressure")
+st.write("")
+
+# === Favorites ===
+def _load_favorites():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "favorites.json")
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return ["SPY", "QQQ", "VOO", "XLK", "NVDA"]
+
+_favs = _load_favorites()
+
+if "bvs_ticker" not in st.session_state:
+    st.session_state.bvs_ticker = "SPY"
+
+if "fav" in st.query_params and st.query_params["fav"] in _favs:
+    st.session_state.bvs_ticker = st.query_params["fav"]
+    del st.query_params["fav"]
+
+_fav_links = ", ".join([f'<a href="?fav={f}" target="_self" style="text-decoration:none;">{f}</a>' for f in _favs])
+st.markdown(f"**Favorites:** {_fav_links}", unsafe_allow_html=True)
+
+ticker = st.text_input("Ticker", key="bvs_ticker", max_chars=12).upper().strip()
+if not ticker:
+    st.stop()
 
 # --- Gemini API Key Setup (in sidebar) ──────────────────────────────
 st.sidebar.markdown("---")
@@ -61,9 +86,8 @@ try:
     current_price = fast.last_price or fast.previous_close or "N/A"
 except Exception:
     current_price = "N/A"
-st.title(f"{ticker} — Buying vs Selling Pressure")
 price_display = f"{current_price:,}" if isinstance(current_price, (int, float)) else current_price
-st.markdown(f"### Current Price: **${price_display}**")
+st.markdown(f"### {ticker} — Current Price: **${price_display}**")
 
 # === Period Selection ===
 period_options = {

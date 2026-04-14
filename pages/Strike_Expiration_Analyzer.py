@@ -6,6 +6,7 @@ import numpy as np
 from datetime import datetime, date
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import json, os
 
 # Optional: Google Gemini (only needed for AI analysis)
 try:
@@ -17,15 +18,36 @@ except ImportError:
 # === Page Config ===
 st.set_page_config(page_title="Strike Expiration Analyzer", layout="wide")
 
+st.title("📈 Strike Expiration Analyzer")
+st.write("")
+
+# === Favorites ===
+def _load_favorites():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "favorites.json")
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return ["SPY", "QQQ", "VOO", "XLK", "NVDA"]
+
+_favs = _load_favorites()
+
+if "sea_ticker" not in st.session_state:
+    st.session_state.sea_ticker = "SPY"
+
+if "fav" in st.query_params and st.query_params["fav"] in _favs:
+    st.session_state.sea_ticker = st.query_params["fav"]
+    del st.query_params["fav"]
+
+_fav_links = ", ".join([f'<a href="?fav={f}" target="_self" style="text-decoration:none;">{f}</a>' for f in _favs])
+st.markdown(f"**Favorites:** {_fav_links}", unsafe_allow_html=True)
+
+ticker = st.text_input("Ticker Symbol", key="sea_ticker", max_chars=12).upper().strip()
+
 # === Sidebar ===
 with st.sidebar:
     st.header("📊 Controls")
-    
-    # Ticker input
-    ticker = st.text_input("Ticker Symbol", value="SPY", max_chars=12).upper().strip()
-    
-    st.markdown("---")
-    
+
     # Calls/Puts toggle
     option_type = st.radio(
         "Option Type",
@@ -63,10 +85,7 @@ with st.sidebar:
         st.caption("[Get API Key →](https://aistudio.google.com/app/apikey)")
 
 if not ticker:
-    st.warning("Please enter a ticker symbol")
     st.stop()
-
-st.title(f"📈 Strike Expiration Analyzer – {ticker}")
 
 # Period selection (same as Swing Scanner)
 periods = {

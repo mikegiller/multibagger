@@ -11,6 +11,7 @@ from openpyxl.styles import PatternFill, Font, Alignment
 from openpyxl.utils import get_column_letter
 from openpyxl.formatting.rule import CellIsRule
 import plotly.graph_objects as go
+import json, os
 
 # Optional: Google Gemini (only needed for AI analysis)
 try:
@@ -64,6 +65,26 @@ for key in ["ticker_input", "expiry", "calls_data", "summary_data", "column_name
 if st.button("🔄 Reset"):
     for key in ["ticker_input", "expiry", "calls_data", "summary_data", "column_names", "last_fetched_ticker", "last_fetched_expiry"]:
         st.session_state[key] = None
+
+# --- Favorites ---
+def _load_favorites():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "favorites.json")
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return ["SPY", "QQQ", "VOO", "XLK", "NVDA"]
+
+_favs = _load_favorites()
+
+if "fav" in st.query_params and st.query_params["fav"] in _favs:
+    st.session_state.ticker_input = st.query_params["fav"]
+    st.session_state.calls_data = None
+    st.session_state.expiry = None
+    del st.query_params["fav"]
+
+_fav_links = ", ".join([f'<a href="?fav={f}" target="_self" style="text-decoration:none;">{f}</a>' for f in _favs])
+st.markdown(f"**Favorites:** {_fav_links}", unsafe_allow_html=True)
 
 # --- Ticker input ---
 ticker_input = st.text_input("Enter ticker symbol (required):", value=st.session_state.ticker_input or "").upper()

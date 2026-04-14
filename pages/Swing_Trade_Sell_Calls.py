@@ -5,6 +5,7 @@ import numpy as np
 from datetime import datetime, date
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import json, os
 
 # Optional: Google Gemini (only needed for AI analysis)
 try:
@@ -48,7 +49,28 @@ with st.sidebar:
 
 st.write("")  # Add spacing
 
-ticker = st.text_input("Ticker", value="NVDA", max_chars=12).upper().strip()
+# === Favorites ===
+def _load_favorites():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "favorites.json")
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return ["SPY", "QQQ", "VOO", "XLK", "NVDA"]
+
+_favs = _load_favorites()
+
+if "stsc_ticker" not in st.session_state:
+    st.session_state.stsc_ticker = "SPY"
+
+if "fav" in st.query_params and st.query_params["fav"] in _favs:
+    st.session_state.stsc_ticker = st.query_params["fav"]
+    del st.query_params["fav"]
+
+_fav_links = ", ".join([f'<a href="?fav={f}" target="_self" style="text-decoration:none;">{f}</a>' for f in _favs])
+st.markdown(f"**Favorites:** {_fav_links}", unsafe_allow_html=True)
+
+ticker = st.text_input("Ticker", key="stsc_ticker", max_chars=12).upper().strip()
 if not ticker:
     st.stop()
 
