@@ -21,13 +21,6 @@ st.set_page_config(page_title="Pressure Dashboard", layout="wide", initial_sideb
 st.sidebar.header("Controls")
 ticker = st.sidebar.text_input("Ticker", "SPY").upper()
 
-period_options = {
-    "1 Day": "1d", "1 Week": "5d", "1 Month": "1mo", "3 Months": "3mo",
-    "6 Months": "6mo", "1 Year": "1y", "2 Years": "2y", "5 Years": "5y"
-}
-period_name = st.sidebar.selectbox("Period", list(period_options.keys()), index=0)
-period = period_options[period_name]
-
 # --- Gemini API Key Setup (in sidebar) ──────────────────────────────
 st.sidebar.markdown("---")
 st.sidebar.header("🤖 AI Analysis Settings")
@@ -71,6 +64,28 @@ except Exception:
 st.title(f"{ticker} — Buying vs Selling Pressure")
 price_display = f"{current_price:,}" if isinstance(current_price, (int, float)) else current_price
 st.markdown(f"### Current Price: **${price_display}**")
+
+# === Period Selection ===
+period_options = {
+    "1d": "1 Day", "5d": "1 Week", "1mo": "1 Month", "3mo": "3 Months",
+    "6mo": "6 Months", "1y": "1 Year", "2y": "2 Years", "5y": "5 Years"
+}
+
+st.write("**Select time range:**")
+cols = st.columns(len(period_options))
+selected_period = None
+for i, (key, label) in enumerate(period_options.items()):
+    with cols[i]:
+        if st.button(label, key=f"btn_{key}", use_container_width=True):
+            selected_period = key
+
+if "bvs_period" not in st.session_state:
+    st.session_state.bvs_period = "1d"
+if selected_period is not None:
+    st.session_state.bvs_period = selected_period
+
+period = st.session_state.bvs_period
+st.info(f"Showing: **{period_options[period]}**", icon="📊")
 
 # === Data Fetching ===
 @st.cache_data(ttl=900, show_spinner="Fetching data...")
@@ -227,6 +242,13 @@ config = {
     "displaylogo": False
 }
 
+# === Rangebreaks — hide non-trading hours for intraday periods ===
+intraday = period in ["1d", "5d"]
+rangebreaks = [
+    dict(bounds=["sat", "mon"]),               # hide weekends
+    dict(bounds=[16, 9.5], pattern="hour"),    # hide overnight (4 PM – 9:30 AM)
+] if intraday else []
+
 # === Universal Chart Function (ensures perfect alignment) ===
 def plot(fig, title=None, height=380):
     fig.update_layout(
@@ -238,7 +260,7 @@ def plot(fig, title=None, height=380):
         hovermode="x",
         dragmode=False
     )
-    fig.update_xaxes(fixedrange=True)
+    fig.update_xaxes(fixedrange=True, rangebreaks=rangebreaks)
     fig.update_yaxes(fixedrange=True)
     if st.session_state.zoom_range:
         fig.update_xaxes(range=st.session_state.zoom_range)
@@ -299,12 +321,12 @@ with col_left:
         xaxis_rangeslider_visible=False
     )
     
-    fig1.update_xaxes(fixedrange=True)
+    fig1.update_xaxes(fixedrange=True, rangebreaks=rangebreaks)
     fig1.update_yaxes(fixedrange=True)
-    
+
     if st.session_state.zoom_range:
         fig1.update_xaxes(range=st.session_state.zoom_range)
-    
+
     st.plotly_chart(fig1, use_container_width=True, config=config)
 
     # 2. OBV & PVT — Toggleable
@@ -440,9 +462,9 @@ else:
 Analyze this stock's buying/selling pressure and momentum to provide trading insights.
 
 TICKER: {ticker}
-TIMEFRAME: {period_name}
+TIMEFRAME: {period_options[period]}
 CURRENT PRICE: ${latest_close:.2f}
-PRICE CHANGE ({period_name}): {price_change:+.2f}%
+PRICE CHANGE ({period_options[period]}): {price_change:+.2f}%
 
 PRESSURE SCORE: {score}/100 ({"BULLISH" if score >= 65 else "NEUTRAL" if score >= 45 else "BEARISH"})
 
