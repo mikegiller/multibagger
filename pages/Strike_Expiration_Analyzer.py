@@ -7,11 +7,6 @@ from datetime import datetime, date
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# SSL fix for Mac
-import ssl
-import certifi
-ssl._create_default_https_context = ssl._create_unverified_context
-
 # Optional: Google Gemini (only needed for AI analysis)
 try:
     import google.generativeai as genai

@@ -12,11 +12,6 @@ from openpyxl.utils import get_column_letter
 from openpyxl.formatting.rule import CellIsRule
 import plotly.graph_objects as go
 
-# SSL fix for Mac
-import ssl
-import certifi
-ssl._create_default_https_context = ssl._create_unverified_context
-
 # Optional: Google Gemini (only needed for AI analysis)
 try:
     import google.generativeai as genai
@@ -24,8 +19,7 @@ try:
 except ImportError:
     GEMINI_AVAILABLE = False
 
-# Current date as per user instruction
-TODAY = datetime(2026, 1, 6)
+TODAY = datetime.now()
 
 # --- Page settings ---
 st.set_page_config(page_title="Call Options Viewer", layout="wide")
@@ -62,17 +56,21 @@ with st.sidebar:
         st.caption("[Get API Key →](https://aistudio.google.com/app/apikey)")
 
 # --- Session state ---
-for key in ["ticker_input", "expiry", "calls_data", "summary_data", "column_names"]:
+for key in ["ticker_input", "expiry", "calls_data", "summary_data", "column_names", "last_fetched_ticker", "last_fetched_expiry"]:
     if key not in st.session_state:
         st.session_state[key] = None
 
 # --- Reset button ---
 if st.button("🔄 Reset"):
-    for key in ["ticker_input", "expiry", "calls_data", "summary_data", "column_names"]:
+    for key in ["ticker_input", "expiry", "calls_data", "summary_data", "column_names", "last_fetched_ticker", "last_fetched_expiry"]:
         st.session_state[key] = None
 
 # --- Ticker input ---
 ticker_input = st.text_input("Enter ticker symbol (required):", value=st.session_state.ticker_input or "").upper()
+# Clear cached data when ticker changes
+if ticker_input != st.session_state.ticker_input:
+    st.session_state.calls_data = None
+    st.session_state.expiry = None
 st.session_state.ticker_input = ticker_input
 
 # --- Fetch expirations ---
@@ -93,7 +91,7 @@ if ticker_input:
 # --- Expiration dropdown with days to expiry ---
 expiry = None
 if expirations:
-    # Sort descending (soonest expiration first)
+    # Sort descending (furthest expiration first)
     expirations_sorted = sorted(expirations, reverse=True)
     
     # Format options with days remaining
@@ -127,6 +125,10 @@ if expirations:
 
 # --- Data Refresh button ---
 refresh_pressed = st.button("🔄 Data Refresh")
+
+# Clear cached data when expiry changes
+if expiry != st.session_state.get("last_fetched_expiry") and expiry is not None:
+    st.session_state.calls_data = None
 
 # --- Cached data fetch function ---
 @st.cache_data(ttl=600, show_spinner="Fetching fresh options data from Yahoo Finance...")
@@ -182,6 +184,8 @@ if ticker_input and expiry and (refresh_pressed or st.session_state.calls_data i
     st.session_state.calls_data = calls
     st.session_state.summary_data = summary_df
     st.session_state.column_names = column_names
+    st.session_state.last_fetched_ticker = ticker_input
+    st.session_state.last_fetched_expiry = expiry
 else:
     calls = st.session_state.calls_data
     summary_df = st.session_state.summary_data

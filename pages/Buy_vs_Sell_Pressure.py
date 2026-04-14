@@ -7,11 +7,6 @@ from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import numpy as np
 
-# SSL fix for Mac
-import ssl
-import certifi
-ssl._create_default_https_context = ssl._create_unverified_context
-
 # Optional: Google Gemini (only needed for AI analysis)
 try:
     import google.generativeai as genai
@@ -68,10 +63,14 @@ if st.sidebar.button("Reset Zoom & Settings"):
 
 # === Live Price ===
 stock = yf.Ticker(ticker)
-info = stock.info
-current_price = info.get("regularMarketPrice") or info.get("previousClose") or "N/A"
+try:
+    fast = stock.fast_info
+    current_price = fast.last_price or fast.previous_close or "N/A"
+except Exception:
+    current_price = "N/A"
 st.title(f"{ticker} — Buying vs Selling Pressure")
-st.markdown(f"### Current Price: **${current_price:,}**")
+price_display = f"{current_price:,}" if isinstance(current_price, (int, float)) else current_price
+st.markdown(f"### Current Price: **${price_display}**")
 
 # === Data Fetching ===
 @st.cache_data(ttl=900, show_spinner="Fetching data...")
