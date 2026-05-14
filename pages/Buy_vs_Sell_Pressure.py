@@ -114,6 +114,26 @@ period_options = {
     "6mo": "6 Months", "1y": "1 Year", "2y": "2 Years", "5y": "5 Years"
 }
 
+@st.cache_data(ttl=900, show_spinner=False)
+def get_period_changes(t, cur_price, prev_close):
+    changes = {}
+    if isinstance(cur_price, (int, float)) and isinstance(prev_close, (int, float)) and prev_close > 0:
+        changes["1d"] = ((cur_price - prev_close) / prev_close) * 100
+    try:
+        hist = yf.Ticker(t).history(period="5y", interval="1d")
+        if not hist.empty:
+            last = hist.Close.iloc[-1]
+            for p, bars in [("5d", 5), ("1mo", 21), ("3mo", 63), ("6mo", 126), ("1y", 252), ("2y", 504), ("5y", len(hist))]:
+                idx = min(bars, len(hist))
+                start = hist.Close.iloc[-idx]
+                if start > 0:
+                    changes[p] = ((last - start) / start) * 100
+    except Exception:
+        pass
+    return changes
+
+period_changes = get_period_changes(ticker, current_price, prev_close)
+
 st.write("**Select time range:**")
 cols = st.columns(len(period_options))
 selected_period = None
@@ -121,6 +141,14 @@ for i, (key, label) in enumerate(period_options.items()):
     with cols[i]:
         if st.button(label, key=f"btn_{key}", use_container_width=True):
             selected_period = key
+        pct = period_changes.get(key)
+        if pct is not None:
+            color = "green" if pct >= 0 else "red"
+            sign = "+" if pct >= 0 else ""
+            st.markdown(
+                f"<div style='text-align:center; color:{color}; font-size:0.85em; margin-top:-6px'>{sign}{pct:.2f}%</div>",
+                unsafe_allow_html=True
+            )
 
 if selected_period is not None:
     st.session_state.bvs_period = selected_period
