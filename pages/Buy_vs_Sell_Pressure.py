@@ -34,13 +34,17 @@ _favs = _load_favorites()
 
 if "bvs_ticker" not in st.session_state:
     st.session_state.bvs_ticker = "SPY"
+if "bvs_period" not in st.session_state:
+    st.session_state.bvs_period = "1d"
 
 if "fav" in st.query_params and st.query_params["fav"] in _favs:
     st.session_state.bvs_ticker = st.query_params["fav"]
+    if "period" in st.query_params:
+        st.session_state.bvs_period = st.query_params["period"]
+        del st.query_params["period"]
     del st.query_params["fav"]
 
-_fav_links = ", ".join([f'<a href="?fav={f}" target="_self" style="text-decoration:none;">{f}</a>' for f in _favs])
-st.markdown(f"**Favorites:** {_fav_links}", unsafe_allow_html=True)
+_fav_placeholder = st.empty()
 
 ticker = st.text_input("Ticker", key="bvs_ticker", max_chars=12).upper().strip()
 if not ticker:
@@ -103,13 +107,14 @@ for i, (key, label) in enumerate(period_options.items()):
         if st.button(label, key=f"btn_{key}", use_container_width=True):
             selected_period = key
 
-if "bvs_period" not in st.session_state:
-    st.session_state.bvs_period = "1d"
 if selected_period is not None:
     st.session_state.bvs_period = selected_period
 
 period = st.session_state.bvs_period
 st.info(f"Showing: **{period_options[period]}**", icon="📊")
+
+_fav_links = ", ".join([f'<a href="?fav={f}&period={period}" target="_self" style="text-decoration:none">{f}</a>' for f in _favs])
+_fav_placeholder.markdown(f"**Favorites:** {_fav_links}", unsafe_allow_html=True)
 
 # === Data Fetching ===
 @st.cache_data(ttl=900, show_spinner="Fetching data...")

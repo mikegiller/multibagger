@@ -34,13 +34,17 @@ _favs = _load_favorites()
 
 if "sea_ticker" not in st.session_state:
     st.session_state.sea_ticker = "SPY"
+if "sea_period" not in st.session_state:
+    st.session_state.sea_period = "5D"
 
 if "fav" in st.query_params and st.query_params["fav"] in _favs:
     st.session_state.sea_ticker = st.query_params["fav"]
+    if "period" in st.query_params:
+        st.session_state.sea_period = st.query_params["period"]
+        del st.query_params["period"]
     del st.query_params["fav"]
 
-_fav_links = ", ".join([f'<a href="?fav={f}" target="_self" style="text-decoration:none;">{f}</a>' for f in _favs])
-st.markdown(f"**Favorites:** {_fav_links}", unsafe_allow_html=True)
+_fav_placeholder = st.empty()
 
 ticker = st.text_input("Ticker Symbol", key="sea_ticker", max_chars=12).upper().strip()
 
@@ -107,13 +111,14 @@ for i, (key, label) in enumerate(periods.items()):
         if st.button(label, key=f"btn_{key}", width="stretch"):
             selected_key = key
 
-if "period" not in st.session_state:
-    st.session_state.period = "5D"
 if selected_key is not None:
-    st.session_state.period = selected_key
+    st.session_state.sea_period = selected_key
 
-period = st.session_state.period
+period = st.session_state.sea_period
 st.info(f"Showing: **{periods[period]}**", icon="📊")
+
+_fav_links = ", ".join([f'<a href="?fav={f}&period={period}" target="_self" style="text-decoration:none">{f}</a>' for f in _favs])
+_fav_placeholder.markdown(f"**Favorites:** {_fav_links}", unsafe_allow_html=True)
 
 show_resistance = st.checkbox("Show Resistance", value=True)
 show_support = st.checkbox("Show Support", value=True)

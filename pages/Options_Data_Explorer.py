@@ -83,7 +83,7 @@ if "fav" in st.query_params and st.query_params["fav"] in _favs:
     st.session_state.expiry = None
     del st.query_params["fav"]
 
-_fav_links = ", ".join([f'<a href="?fav={f}" target="_self" style="text-decoration:none;">{f}</a>' for f in _favs])
+_fav_links = ", ".join([f'<a href="?fav={f}" target="_self" style="text-decoration:none">{f}</a>' for f in _favs])
 st.markdown(f"**Favorites:** {_fav_links}", unsafe_allow_html=True)
 
 # --- Ticker input ---
