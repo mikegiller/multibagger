@@ -87,11 +87,26 @@ if st.sidebar.button("Reset Zoom & Settings"):
 stock = yf.Ticker(ticker)
 try:
     fast = stock.fast_info
-    current_price = fast.last_price or fast.previous_close or "N/A"
+    current_price = fast.last_price or fast.previous_close or None
+    prev_close = fast.previous_close or None
 except Exception:
-    current_price = "N/A"
-price_display = f"{current_price:,}" if isinstance(current_price, (int, float)) else current_price
-st.markdown(f"### {ticker} — Current Price: **${price_display}**")
+    current_price = None
+    prev_close = None
+
+if isinstance(current_price, (int, float)):
+    price_display = f"${current_price:,.2f}"
+    if isinstance(prev_close, (int, float)) and prev_close > 0:
+        day_change = current_price - prev_close
+        day_pct = (day_change / prev_close) * 100
+        arrow = "▲" if day_change >= 0 else "▼"
+        sign = "+" if day_change >= 0 else ""
+        change_color = "green" if day_change >= 0 else "red"
+        change_str = f"<span style='color:{change_color}'>{arrow} {sign}${day_change:,.2f} ({sign}{day_pct:.2f}%)</span>"
+    else:
+        change_str = ""
+    st.markdown(f"<h3>{ticker} &mdash; {price_display} &nbsp; {change_str}</h3>", unsafe_allow_html=True)
+else:
+    st.markdown(f"<h3>{ticker} &mdash; Current Price: N/A</h3>", unsafe_allow_html=True)
 
 # === Period Selection ===
 period_options = {
