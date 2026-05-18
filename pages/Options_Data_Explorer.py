@@ -57,13 +57,13 @@ with st.sidebar:
         st.caption("[Get API Key →](https://aistudio.google.com/app/apikey)")
 
 # --- Session state ---
-for key in ["ticker_input", "expiry", "calls_data", "summary_data", "column_names", "last_fetched_ticker", "last_fetched_expiry"]:
+for key in ["ticker_input", "expiry", "calls_data", "summary_data", "column_names", "actual_percentages", "last_fetched_ticker", "last_fetched_expiry"]:
     if key not in st.session_state:
         st.session_state[key] = None
 
 # --- Reset button ---
 if st.button("🔄 Reset"):
-    for key in ["ticker_input", "expiry", "calls_data", "summary_data", "column_names", "last_fetched_ticker", "last_fetched_expiry"]:
+    for key in ["ticker_input", "expiry", "calls_data", "summary_data", "column_names", "actual_percentages", "last_fetched_ticker", "last_fetched_expiry"]:
         st.session_state[key] = None
 
 # --- Favorites ---
@@ -185,7 +185,10 @@ def fetch_option_data_cached(ticker_input, expiry):
 
     percentages = [5, 10, 15, 20, 25, 30, 35, 40]
     column_names = []
+    actual_percentages = []
     for pct in percentages:
+        actual_pct = ((1 + pct / 100) ** years_to_expiry - 1) * 100
+        actual_percentages.append(actual_pct)
         target = round(last_price * ((1 + pct/100) ** years_to_expiry), 2)
         col_name = f"{ticker_input}: {pct}% - {target}"
         column_names.append(col_name)
@@ -196,21 +199,23 @@ def fetch_option_data_cached(ticker_input, expiry):
     other_cols = [c for c in calls.columns if c not in front_cols]
     calls = calls[front_cols + other_cols]
 
-    return summary_df, calls, column_names
+    return summary_df, calls, column_names, actual_percentages
 
 # --- Fetch data ---
-if ticker_input and expiry and (refresh_pressed or st.session_state.calls_data is None):
+if ticker_input and expiry and (refresh_pressed or st.session_state.calls_data is None or not st.session_state.actual_percentages):
     with st.spinner("Loading options data..."):
-        summary_df, calls, column_names = fetch_option_data_cached(ticker_input, expiry)
+        summary_df, calls, column_names, actual_percentages = fetch_option_data_cached(ticker_input, expiry)
     st.session_state.calls_data = calls
     st.session_state.summary_data = summary_df
     st.session_state.column_names = column_names
+    st.session_state.actual_percentages = actual_percentages
     st.session_state.last_fetched_ticker = ticker_input
     st.session_state.last_fetched_expiry = expiry
 else:
     calls = st.session_state.calls_data
     summary_df = st.session_state.summary_data
     column_names = st.session_state.column_names or []
+    actual_percentages = st.session_state.actual_percentages or []
 
 # --- Show summary ---
 if summary_df is not None:
@@ -244,6 +249,7 @@ if calls is not None and not calls.empty:
 
         show_cols = []
         defaults = [True, True, True, True, False, False, False, False]
+        days_to_expiry = int(summary_df["Days to Expiry"].iloc[0]) if summary_df is not None else 0
 
         for i, col_name in enumerate(column_names):
             show = checkbox_columns[i].checkbox(
@@ -251,6 +257,8 @@ if calls is not None and not calls.empty:
                 value=defaults[i],
                 key=f"show_{col_name}"
             )
+            if actual_percentages and i < len(actual_percentages):
+                checkbox_columns[i].caption(f"= {actual_percentages[i]:.2f}% total")
             if show:
                 show_cols.append(col_name)
 
