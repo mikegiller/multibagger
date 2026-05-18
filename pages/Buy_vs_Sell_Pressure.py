@@ -482,12 +482,12 @@ with col_left:
             _open_mask = (_et_for_vline.hour == 9) & (_et_for_vline.minute == 30)
             _close_mask = (_et_for_vline.hour == 16) & (_et_for_vline.minute == 0)
             if _open_mask.any():
-                fig1.add_vline(x=_ext_raw.index[_open_mask][0], line_dash="dot",
+                fig1.add_vline(x=_ext_raw.index[_open_mask][0].value // 1_000_000, line_dash="dot",
                                line_color="rgba(128,128,128,0.6)",
                                annotation_text="Open", annotation_position="top left",
                                annotation_font_size=10, annotation_font_color="gray")
             if _close_mask.any():
-                fig1.add_vline(x=_ext_raw.index[_close_mask][0], line_dash="dot",
+                fig1.add_vline(x=_ext_raw.index[_close_mask][0].value // 1_000_000, line_dash="dot",
                                line_color="rgba(128,128,128,0.6)",
                                annotation_text="Close", annotation_position="top left",
                                annotation_font_size=10, annotation_font_color="gray")
