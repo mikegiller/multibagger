@@ -7,6 +7,11 @@ from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import numpy as np
 import json, os
+try:
+    from zoneinfo import ZoneInfo as _ZoneInfo
+    _ET = _ZoneInfo("America/New_York")
+except Exception:
+    _ET = None
 
 # Optional: Google Gemini (only needed for AI analysis)
 try:
@@ -36,12 +41,17 @@ if "bvs_ticker" not in st.session_state:
     st.session_state.bvs_ticker = "SPY"
 if "bvs_period" not in st.session_state:
     st.session_state.bvs_period = "1d"
+if "_ext_pref" not in st.session_state:
+    st.session_state._ext_pref = False
 
 if "fav" in st.query_params and st.query_params["fav"] in _favs:
     st.session_state.bvs_ticker = st.query_params["fav"]
     if "period" in st.query_params:
         st.session_state.bvs_period = st.query_params["period"]
         del st.query_params["period"]
+    if "ext" in st.query_params:
+        st.session_state._ext_pref = (st.query_params["ext"] == "1")
+        del st.query_params["ext"]
     del st.query_params["fav"]
 
 _fav_placeholder = st.empty()
@@ -83,6 +93,66 @@ if st.sidebar.button("Reset Zoom & Settings"):
     st.session_state.clear()
     st.rerun()
 
+# === Extended Hours Helpers ===
+@st.cache_data(ttl=60, show_spinner=False)
+def get_extended_data_1d(t):
+    try:
+        return yf.Ticker(t).history(period="1d", interval="1m", prepost=True)
+    except Exception:
+        return pd.DataFrame()
+
+def _split_extended(ext_df):
+    """Split into (pre_market, regular, after_hours) DataFrames by ET market hours."""
+    empty = pd.DataFrame()
+    if ext_df is None or ext_df.empty or ext_df.index.tz is None or _ET is None:
+        return empty, ext_df if ext_df is not None else empty, empty
+    try:
+        et_idx = ext_df.index.tz_convert(_ET)
+        today = datetime.now(_ET).date()
+        today_mask = [ts.date() == today for ts in et_idx]
+        if not any(today_mask):
+            most_recent = et_idx[-1].date()
+            today_mask = [ts.date() == most_recent for ts in et_idx]
+        if not any(today_mask):
+            return empty, ext_df, empty
+        sub = ext_df[today_mask].copy()
+        sub_et = et_idx[today_mask]
+        mins = sub_et.hour * 60 + sub_et.minute
+        OPEN, CLOSE = 9 * 60 + 30, 16 * 60
+        return sub[mins.values < OPEN], sub[(mins.values >= OPEN) & (mins.values < CLOSE)], sub[mins.values >= CLOSE]
+    except Exception:
+        return empty, ext_df, empty
+
+def _get_ext_hours_metric(t, prev_close, regular_close):
+    """Return (label, price, pct_change) for current extended session, or (None, None, None)."""
+    if _ET is None:
+        return None, None, None
+    try:
+        ext = get_extended_data_1d(t)
+        if ext is None or ext.empty or ext.index.tz is None:
+            return None, None, None
+        et_idx = ext.index.tz_convert(_ET)
+        today = datetime.now(_ET).date()
+        if et_idx[-1].date() != today:
+            return None, None, None
+        pre, regular, after = _split_extended(ext)
+        now_et = datetime.now(_ET)
+        now_min = now_et.hour * 60 + now_et.minute
+        OPEN, CLOSE = 9 * 60 + 30, 16 * 60
+        if now_min < OPEN and not pre.empty:
+            price = float(pre.Close.iloc[-1])
+            ref = prev_close
+            chg = ((price - ref) / ref * 100) if ref else None
+            return "Pre-market", price, chg
+        if now_min >= CLOSE and not after.empty:
+            price = float(after.Close.iloc[-1])
+            ref = float(regular.Close.iloc[-1]) if not regular.empty else (regular_close or prev_close)
+            chg = ((price - ref) / ref * 100) if ref else None
+            return "After-hours", price, chg
+    except Exception:
+        pass
+    return None, None, None
+
 # === Live Price ===
 stock = yf.Ticker(ticker)
 try:
@@ -107,6 +177,16 @@ if isinstance(current_price, (int, float)):
     st.markdown(f"<h3>{ticker} &mdash; {price_display} &nbsp; {change_str}</h3>", unsafe_allow_html=True)
 else:
     st.markdown(f"<h3>{ticker} &mdash; Current Price: N/A</h3>", unsafe_allow_html=True)
+
+_ext_label, _ext_price, _ext_chg = _get_ext_hours_metric(ticker, prev_close, current_price)
+if _ext_label and isinstance(_ext_price, float):
+    _ext_color = "green" if (_ext_chg or 0) >= 0 else "red"
+    _ext_sign = "+" if (_ext_chg or 0) >= 0 else ""
+    _ext_chg_str = f" ({_ext_sign}{_ext_chg:.2f}%)" if _ext_chg is not None else ""
+    st.markdown(
+        f"<div style='color:{_ext_color}; font-size:0.95em'><b>{_ext_label}:</b> ${_ext_price:,.2f}{_ext_chg_str}</div>",
+        unsafe_allow_html=True
+    )
 
 # === Period Selection ===
 period_options = {
@@ -156,7 +236,8 @@ if selected_period is not None:
 period = st.session_state.bvs_period
 st.info(f"Showing: **{period_options[period]}**", icon="📊")
 
-_fav_links = ", ".join([f'<a href="?fav={f}&period={period}" target="_self" style="text-decoration:none">{f}</a>' for f in _favs])
+_ext_url = "&ext=1" if st.session_state._ext_pref else ""
+_fav_links = ", ".join([f'<a href="?fav={f}&period={period}{_ext_url}" target="_self" style="text-decoration:none">{f}</a>' for f in _favs])
 _fav_placeholder.markdown(f"**Favorites:** {_fav_links}", unsafe_allow_html=True)
 
 # === Data Fetching ===
@@ -306,6 +387,8 @@ score, score_components = calculate_pressure_score(df, pcr, poc_price, period)
 # === Shared Zoom State ===
 if "zoom_range" not in st.session_state:
     st.session_state.zoom_range = None
+# Restore widget key from persistent pref (handles Streamlit clearing widget keys for non-rendered widgets)
+st.session_state.show_extended_hours = st.session_state._ext_pref
 
 # === Plotly Config (Disable zoom/select) ===
 config = {
@@ -320,6 +403,12 @@ rangebreaks = [
     dict(bounds=["sat", "mon"]),               # hide weekends
     dict(bounds=[16, 9.5], pattern="hour"),    # hide overnight (4 PM – 9:30 AM)
 ] if intraday else []
+
+_show_ext = period == "1d" and st.session_state._ext_pref
+rangebreaks_price = [
+    dict(bounds=["sat", "mon"]),
+    dict(bounds=[20, 4], pattern="hour"),      # show 4 AM – 8 PM window
+] if _show_ext else rangebreaks
 
 # === Universal Chart Function (ensures perfect alignment) ===
 def plot(fig, title=None, height=380):
@@ -351,18 +440,63 @@ with col_left:
         subplot_titles=("", "")
     )
     
-    # Price candlestick
-    fig1.add_trace(
-        go.Candlestick(x=df.index, open=df.Open, high=df.High, low=df.Low, close=df.Close, name="Price"),
-        row=1, col=1
-    )
-    
-    # Checkbox with description for VWAP
-    col_vwap, col_poc = st.columns(2)
+    # Chart controls
+    col_vwap, col_poc, col_ext = st.columns(3)
     with col_vwap:
         show_vwap = st.checkbox("VWAP", True, key="vwap", help="Volume-Weighted Average Price - average price weighted by volume, used to identify support/resistance levels")
     with col_poc:
         show_poc = st.checkbox("POC", True, key="poc", help="Point of Control - price level with highest traded volume, acts as a magnet for price action")
+    with col_ext:
+        if period == "1d":
+            def _on_ext_change():
+                st.session_state._ext_pref = st.session_state.show_extended_hours
+            st.checkbox("Extended Hours", key="show_extended_hours",
+                        on_change=_on_ext_change,
+                        help="Show pre-market (4–9:30 AM ET) and after-hours (4–8 PM ET) candles.")
+
+    # Price candlestick(s)
+    if _show_ext:
+        _ext_raw = get_extended_data_1d(ticker)
+        _pre_df, _reg_df, _aft_df = _split_extended(_ext_raw)
+        if not _pre_df.empty:
+            fig1.add_trace(go.Candlestick(
+                x=_pre_df.index, open=_pre_df.Open, high=_pre_df.High, low=_pre_df.Low, close=_pre_df.Close,
+                name="Pre-market",
+                increasing=dict(line=dict(color="rgba(0,180,0,0.5)"), fillcolor="rgba(0,180,0,0.18)"),
+                decreasing=dict(line=dict(color="rgba(200,0,0,0.5)"), fillcolor="rgba(200,0,0,0.18)"),
+            ), row=1, col=1)
+        _chart_df = _reg_df if not _reg_df.empty else df
+        fig1.add_trace(go.Candlestick(
+            x=_chart_df.index, open=_chart_df.Open, high=_chart_df.High,
+            low=_chart_df.Low, close=_chart_df.Close, name="Regular Hours",
+        ), row=1, col=1)
+        if not _aft_df.empty:
+            fig1.add_trace(go.Candlestick(
+                x=_aft_df.index, open=_aft_df.Open, high=_aft_df.High, low=_aft_df.Low, close=_aft_df.Close,
+                name="After-hours",
+                increasing=dict(line=dict(color="rgba(80,120,220,0.5)"), fillcolor="rgba(80,120,220,0.18)"),
+                decreasing=dict(line=dict(color="rgba(150,80,200,0.5)"), fillcolor="rgba(150,80,200,0.18)"),
+            ), row=1, col=1)
+        if not _ext_raw.empty and _ET is not None:
+            _et_for_vline = _ext_raw.index.tz_convert(_ET)
+            _open_mask = (_et_for_vline.hour == 9) & (_et_for_vline.minute == 30)
+            _close_mask = (_et_for_vline.hour == 16) & (_et_for_vline.minute == 0)
+            if _open_mask.any():
+                fig1.add_vline(x=_ext_raw.index[_open_mask][0], line_dash="dot",
+                               line_color="rgba(128,128,128,0.6)",
+                               annotation_text="Open", annotation_position="top left",
+                               annotation_font_size=10, annotation_font_color="gray")
+            if _close_mask.any():
+                fig1.add_vline(x=_ext_raw.index[_close_mask][0], line_dash="dot",
+                               line_color="rgba(128,128,128,0.6)",
+                               annotation_text="Close", annotation_position="top left",
+                               annotation_font_size=10, annotation_font_color="gray")
+    else:
+        _ext_raw = pd.DataFrame()
+        fig1.add_trace(
+            go.Candlestick(x=df.index, open=df.Open, high=df.High, low=df.Low, close=df.Close, name="Price"),
+            row=1, col=1
+        )
     
     if show_vwap:
         fig1.add_trace(
@@ -377,10 +511,23 @@ with col_left:
         )
     
     # Volume bars
-    fig1.add_trace(
-        go.Bar(x=df.index, y=df.Volume, name="Volume", marker_color="rgba(255,100,100,0.7)", showlegend=False),
-        row=2, col=1
-    )
+    if _show_ext and not _ext_raw.empty and _ET is not None:
+        _et_vol_idx = _ext_raw.index.tz_convert(_ET)
+        _vol_colors = [
+            "rgba(100,150,200,0.55)" if (ts.hour * 60 + ts.minute) < 9 * 60 + 30
+            else "rgba(150,100,200,0.55)" if (ts.hour * 60 + ts.minute) >= 16 * 60
+            else "rgba(255,100,100,0.7)"
+            for ts in _et_vol_idx
+        ]
+        fig1.add_trace(
+            go.Bar(x=_ext_raw.index, y=_ext_raw.Volume, name="Volume", marker_color=_vol_colors, showlegend=False),
+            row=2, col=1
+        )
+    else:
+        fig1.add_trace(
+            go.Bar(x=df.index, y=df.Volume, name="Volume", marker_color="rgba(255,100,100,0.7)", showlegend=False),
+            row=2, col=1
+        )
     
     fig1.update_layout(
         height=600,
@@ -393,7 +540,7 @@ with col_left:
         xaxis_rangeslider_visible=False
     )
     
-    fig1.update_xaxes(fixedrange=True, rangebreaks=rangebreaks)
+    fig1.update_xaxes(fixedrange=True, rangebreaks=rangebreaks_price)
     fig1.update_yaxes(fixedrange=True)
 
     if st.session_state.zoom_range:
