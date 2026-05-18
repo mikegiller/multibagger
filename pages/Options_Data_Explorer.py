@@ -187,9 +187,13 @@ def fetch_option_data_cached(ticker_input, expiry):
     column_names = []
     actual_percentages = []
     for pct in percentages:
-        actual_pct = ((1 + pct / 100) ** years_to_expiry - 1) * 100
+        if years_to_expiry <= 1:
+            actual_pct = pct
+            target = round(last_price * (1 + pct / 100), 2)
+        else:
+            actual_pct = ((1 + pct / 100) ** years_to_expiry - 1) * 100
+            target = round(last_price * ((1 + pct / 100) ** years_to_expiry), 2)
         actual_percentages.append(actual_pct)
-        target = round(last_price * ((1 + pct/100) ** years_to_expiry), 2)
         col_name = f"{ticker_input}: {pct}% - {target}"
         column_names.append(col_name)
         calls[col_name] = ((target - (calls["strike"] + calls["middle"])) / calls["middle"]) * 100
