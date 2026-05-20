@@ -15,21 +15,29 @@ st.divider()
 st.subheader("Available Tools")
 
 # Main prominent tools
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 
 with col1:
     st.page_link(
-        "pages/Options_Data_Explorer.py", 
-        label="Options Data Explorer", 
+        "pages/Options_Data_Explorer.py",
+        label="Options Data Explorer",
         icon="📈",
         use_container_width=True
     )
 
 with col2:
     st.page_link(
-        "pages/Buy_vs_Sell_Pressure.py", 
-        label="Buy vs Sell Pressure", 
+        "pages/Buy_vs_Sell_Pressure.py",
+        label="Buy vs Sell Pressure",
         icon="📊",
+        use_container_width=True
+    )
+
+with col3:
+    st.page_link(
+        "pages/Chart_Pattern_Analyzer.py",
+        label="Chart Pattern Analyzer",
+        icon="📐",
         use_container_width=True
     )
 

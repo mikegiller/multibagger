@@ -4,6 +4,12 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import yfinance as yf
+import os
+import yfinance.cache as _yfc
+# yfinance's tz cache can break if its dir was deleted; replace with dummy to bypass SQLite
+os.makedirs(os.path.join(os.path.expanduser('~'), '.cache', 'py-yfinance'), exist_ok=True)
+_yfc._TzCacheManager._tz_cache = _yfc._TzCacheDummy()
+_yfc._CookieCacheManager._Cookie_cache = _yfc._CookieCacheDummy()
 from io import BytesIO
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 from openpyxl import load_workbook
@@ -11,7 +17,8 @@ from openpyxl.styles import PatternFill, Font, Alignment
 from openpyxl.utils import get_column_letter
 from openpyxl.formatting.rule import CellIsRule
 import plotly.graph_objects as go
-import json, os
+import json
+
 
 # Optional: Google Gemini (only needed for AI analysis)
 try:
