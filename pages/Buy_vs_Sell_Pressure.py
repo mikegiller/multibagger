@@ -164,8 +164,13 @@ def _get_ext_hours_metric(t, prev_close, regular_close):
 stock = yf.Ticker(ticker)
 try:
     fast = stock.fast_info
-    current_price = fast.last_price or fast.previous_close or None
-    prev_close = fast.previous_close or None
+    current_price = fast.last_price or None
+    # fast_info.previous_close can return today's intraday price; use daily history for accuracy
+    _daily = stock.history(period="5d", interval="1d", auto_adjust=True)
+    if len(_daily) >= 2:
+        prev_close = float(_daily["Close"].iloc[-2])
+    else:
+        prev_close = fast.previous_close or None
 except Exception:
     current_price = None
     prev_close = None
