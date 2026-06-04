@@ -41,6 +41,15 @@ with col3:
         use_container_width=True
     )
 
+st.subheader("Market Analysis")
+
+st.page_link(
+    "pages/Capital_Reallocation.py",
+    label="Capital Reallocation",
+    icon="🔄",
+    use_container_width=True
+)
+
 # Collapsed section for other tools
 with st.expander("Other ▼", expanded=False):
     st.page_link(
