@@ -1,34 +1,20 @@
 import streamlit as st
 import yfinance as yf
-import os
-import yfinance.cache as _yfc
-os.makedirs(os.path.join(os.path.expanduser('~'), '.cache', 'py-yfinance'), exist_ok=True)
-_yfc._TzCacheManager._tz_cache = _yfc._TzCacheDummy()
-_yfc._CookieCacheManager._Cookie_cache = _yfc._CookieCacheDummy()
+import utils  # applies the yfinance cache workaround on import
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import json
 
 st.set_page_config(page_title="Chart Pattern Analyzer", layout="wide")
 st.title("Chart Pattern Analyzer")
 st.info("**Purpose:** Project future price targets based on existing trends. Applies technical overlays — linear regression channels, moving averages, and more — to identify where price is likely heading.")
 
 # === Favorites ===
-def _load_favorites():
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "favorites.json")
-    try:
-        with open(path) as f:
-            return json.load(f)
-    except Exception:
-        return ["SPY", "QQQ", "VOO", "XLK", "NVDA"]
-
-_favs = _load_favorites()
+_favs = utils.load_favorites()
 
 # === Session State ===
 _defaults = {
-    "cpa_ticker": "SPY",
     "cpa_period": "1y",
     "cpa_horizon": "3 Months",
     "cpa_lt_period": "2y",
@@ -40,6 +26,7 @@ for k, v in _defaults.items():
 
 if "fav" in st.query_params and st.query_params["fav"] in _favs:
     st.session_state.cpa_ticker = st.query_params["fav"]
+    utils.set_active_ticker(st.query_params["fav"])
     del st.query_params["fav"]
 
 # === Sidebar — Clear Cache only ===
@@ -51,15 +38,11 @@ with st.sidebar:
 
 # === Shared Ticker Input ===
 _fav_placeholder = st.empty()
-ticker = st.text_input("Ticker", key="cpa_ticker", max_chars=12).upper().strip()
+ticker = utils.ticker_input("cpa_ticker", max_chars=12)
 if not ticker:
     st.stop()
 
-_fav_links = ", ".join([
-    f'<a href="?fav={f}" target="_self" style="text-decoration:none">{f}</a>'
-    for f in _favs
-])
-_fav_placeholder.markdown(f"**Favorites:** {_fav_links}", unsafe_allow_html=True)
+_fav_placeholder.markdown(utils.favorites_html(_favs), unsafe_allow_html=True)
 
 
 # === Period % Change Helpers ===

@@ -1,0 +1,8 @@
+streamlit>=1.58
+yfinance>=1.4
+pandas>=3.0
+numpy>=2.0
+plotly>=6.0
+streamlit-aggrid>=1.2
+openpyxl>=3.1
+google-genai>=2.0

@@ -1,11 +1,7 @@
 # Capital_Reallocation.py
 import streamlit as st
 import yfinance as yf
-import os
-import yfinance.cache as _yfc
-os.makedirs(os.path.join(os.path.expanduser('~'), '.cache', 'py-yfinance'), exist_ok=True)
-_yfc._TzCacheManager._tz_cache = _yfc._TzCacheDummy()
-_yfc._CookieCacheManager._Cookie_cache = _yfc._CookieCacheDummy()
+import utils  # applies the yfinance cache workaround on import
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import date, timedelta
@@ -80,21 +76,21 @@ def _period_start(label: str) -> date:
     return today - timedelta(days=days_map[label])
 
 @st.cache_data(ttl=900, show_spinner=False)
-def _fetch_close(tkr: str) -> pd.Series:
+def _get_prices(tickers: tuple) -> pd.DataFrame:
+    # Single batched request instead of one per ticker
     try:
-        hist = yf.Ticker(tkr).history(period="2y", interval="1d", auto_adjust=True)
-        if hist.empty:
-            return pd.Series(dtype=float, name=tkr)
-        if hist.index.tz is not None:
-            hist.index = hist.index.tz_localize(None)
-        s = hist["Close"].copy()
-        s.name = tkr
-        return s
+        data = yf.download(list(tickers), period="2y", interval="1d",
+                           auto_adjust=True, progress=False, group_by="column")
+        if data is None or data.empty:
+            return pd.DataFrame(columns=list(tickers))
+        closes = data["Close"]
+        if isinstance(closes, pd.Series):
+            closes = closes.to_frame(tickers[0])
+        if closes.index.tz is not None:
+            closes.index = closes.index.tz_localize(None)
+        return closes
     except Exception:
-        return pd.Series(dtype=float, name=tkr)
-
-def _get_prices(tickers: list) -> pd.DataFrame:
-    return pd.concat([_fetch_close(t) for t in tickers], axis=1)
+        return pd.DataFrame(columns=list(tickers))
 
 def _pct_return(series: pd.Series, period_label: str):
     s = series.dropna()
@@ -110,8 +106,8 @@ ac_tickers  = [r[0] for r in ASSET_CLASSES]
 sec_tickers = [r[0] for r in SECTORS]
 
 with st.spinner("Loading market data..."):
-    ac_prices  = _get_prices(ac_tickers)
-    sec_prices = _get_prices(sec_tickers)
+    ac_prices  = _get_prices(tuple(ac_tickers))
+    sec_prices = _get_prices(tuple(sec_tickers))
 
 # ── Section 1: Asset Class Normalized Chart ───────────────────────────────────
 

@@ -1,31 +1,18 @@
 # app.py — ULTIMATE BUYING vs SELLING PRESSURE DASHBOARD (Dec 2025)
 import streamlit as st
 import yfinance as yf
-import os
-import yfinance.cache as _yfc
-# yfinance's tz cache can break if its dir was deleted; replace with dummy to bypass SQLite
-os.makedirs(os.path.join(os.path.expanduser('~'), '.cache', 'py-yfinance'), exist_ok=True)
-_yfc._TzCacheManager._tz_cache = _yfc._TzCacheDummy()
-_yfc._CookieCacheManager._Cookie_cache = _yfc._CookieCacheDummy()
+import utils  # applies the yfinance cache workaround on import
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import numpy as np
-import json
 
 try:
     from zoneinfo import ZoneInfo as _ZoneInfo
     _ET = _ZoneInfo("America/New_York")
 except Exception:
     _ET = None
-
-# Optional: Google Gemini (only needed for AI analysis)
-try:
-    import google.generativeai as genai
-    GEMINI_AVAILABLE = True
-except ImportError:
-    GEMINI_AVAILABLE = False
 
 # === Page Config ===
 st.set_page_config(page_title="Pressure Dashboard", layout="wide", initial_sidebar_state="expanded")
@@ -35,18 +22,8 @@ st.info("**Purpose:** Gauge bullish or bearish conviction for a ticker. Goes bey
 st.write("")
 
 # === Favorites ===
-def _load_favorites():
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "favorites.json")
-    try:
-        with open(path) as f:
-            return json.load(f)
-    except Exception:
-        return ["SPY", "QQQ", "VOO", "XLK", "NVDA"]
+_favs = utils.load_favorites()
 
-_favs = _load_favorites()
-
-if "bvs_ticker" not in st.session_state:
-    st.session_state.bvs_ticker = "SPY"
 if "bvs_period" not in st.session_state:
     st.session_state.bvs_period = "1d"
 if "_ext_pref" not in st.session_state:
@@ -54,6 +31,7 @@ if "_ext_pref" not in st.session_state:
 
 if "fav" in st.query_params and st.query_params["fav"] in _favs:
     st.session_state.bvs_ticker = st.query_params["fav"]
+    utils.set_active_ticker(st.query_params["fav"])
     if "period" in st.query_params:
         st.session_state.bvs_period = st.query_params["period"]
         del st.query_params["period"]
@@ -64,38 +42,13 @@ if "fav" in st.query_params and st.query_params["fav"] in _favs:
 
 _fav_placeholder = st.empty()
 
-ticker = st.text_input("Ticker", key="bvs_ticker", max_chars=12).upper().strip()
+ticker = utils.ticker_input("bvs_ticker", max_chars=12)
 if not ticker:
     st.stop()
 
 # --- Gemini API Key Setup (in sidebar) ──────────────────────────────
 st.sidebar.markdown("---")
-st.sidebar.header("🤖 AI Analysis Settings")
-
-if not GEMINI_AVAILABLE:
-    st.sidebar.warning("⚠️ Google Gemini not installed")
-    st.sidebar.code("pip install google-generativeai", language="bash")
-    gemini_api_key = None
-else:
-    gemini_api_key = st.sidebar.text_input(
-        "Gemini API Key", 
-        type="password",
-        help="Get free API key at: https://aistudio.google.com/app/apikey",
-        value=""
-    )
-    
-    if gemini_api_key:
-        try:
-            genai.configure(api_key=gemini_api_key)
-            st.sidebar.success("✅ Gemini API configured")
-        except Exception as e:
-            st.sidebar.error(f"❌ API configuration failed: {str(e)}")
-    else:
-        st.sidebar.info("💡 Add API key to enable AI analysis")
-    
-    st.sidebar.markdown("---")
-    st.sidebar.caption("**Free Tier**: 1,500 requests/day")
-    st.sidebar.caption("[Get API Key →](https://aistudio.google.com/app/apikey)")
+gemini_client = utils.gemini_sidebar()
 
 if st.sidebar.button("Reset Zoom & Settings"):
     st.session_state.clear()
@@ -250,25 +203,25 @@ period = st.session_state.bvs_period
 st.info(f"Showing: **{period_options[period]}**", icon="📊")
 
 _ext_url = "&ext=1" if st.session_state._ext_pref else ""
-_fav_links = ", ".join([f'<a href="?fav={f}&period={period}{_ext_url}" target="_self" style="text-decoration:none">{f}</a>' for f in _favs])
-_fav_placeholder.markdown(f"**Favorites:** {_fav_links}", unsafe_allow_html=True)
+_fav_placeholder.markdown(utils.favorites_html(_favs, f"&period={period}{_ext_url}"), unsafe_allow_html=True)
 
 # === Data Fetching ===
-@st.cache_data(ttl=900, show_spinner="Fetching data...")
-def get_data(t, p):
-    stock = yf.Ticker(t)
+@st.cache_data(ttl=900, show_spinner="Fetching price history...")
+def get_history(t, p):
     interval = "1m" if p in ["1d","5d"] else "1d"
-    hist = stock.history(period=p, interval=interval)
-    if hist.empty:
-        return None, None, None, None, None, None
+    return yf.Ticker(t).history(period=p, interval=interval)
 
-    # Get last data timestamp
-    last_timestamp = hist.index[-1] if not hist.empty else None
-
-    # Long-dated unusual options activity (>=6 months out)
+# Cached per ticker (not per period) so switching time ranges doesn't refetch ~20 chains
+@st.cache_data(ttl=900, show_spinner="Scanning long-dated options...")
+def get_options_flow(t):
+    stock = yf.Ticker(t)
     today = datetime.now().date()
     six_months = today + timedelta(days=180)
-    long_dates = [d for d in stock.options if datetime.strptime(d, "%Y-%m-%d").date() >= six_months]
+    try:
+        expiries = stock.options or ()
+    except Exception:
+        expiries = ()
+    long_dates = [d for d in expiries if datetime.strptime(d, "%Y-%m-%d").date() >= six_months]
 
     spikes = []
     total_call = total_put = 0
@@ -282,12 +235,14 @@ def get_data(t, p):
             spikes.append(frame[['strike','volume','type','expiry','total_vol']])
             total_call += calls['volume'].sum()
             total_put  += puts['volume'].sum()
-        except:
+        except Exception:
             continue
 
     if spikes:
         opts = pd.concat(spikes)
-        avg = opts['total_vol'].replace(0, pd.NA).mean() or 1
+        avg = opts['total_vol'].replace(0, pd.NA).mean()
+        if pd.isna(avg) or avg <= 0:
+            avg = 1
         unusual = opts[opts['total_vol'] > 5*avg].copy()
         unusual['x'] = (unusual['total_vol']/avg).round(1)
         unusual = unusual.sort_values('total_vol', ascending=False).head(12)
@@ -298,15 +253,18 @@ def get_data(t, p):
     pcr = total_put / (total_call + 1e-6) if total_call else 10
     opt_vol = total_call + total_put
 
-    return hist, pcr, opt_vol, unusual, avg, last_timestamp
+    return pcr, opt_vol, unusual, avg
 
-df, pcr, opt_vol, spikes, avg_opt, last_data_time = get_data(ticker, period)
+df = get_history(ticker, period)
 if df is None or df.empty:
     st.error("No data available for this ticker/period.")
     st.stop()
+last_data_time = df.index[-1]
+pcr, opt_vol, spikes, avg_opt = get_options_flow(ticker)
 
 # === Indicators ===
-df["OBV"] = (df.Volume * ((df.Close > df.Open).astype(int)*2 - 1)).cumsum()
+# Standard OBV: volume signed by close vs prior close
+df["OBV"] = (np.sign(df.Close.diff()).fillna(0) * df.Volume).cumsum()
 
 df["TP"] = (df.High + df.Low + df.Close) / 3
 df["TPV"] = df["TP"] * df.Volume
@@ -636,11 +594,11 @@ if "chat_history_pressure" not in st.session_state:
 if "initial_context_pressure" not in st.session_state:
     st.session_state.initial_context_pressure = None
 
-if not GEMINI_AVAILABLE:
+if not utils.GEMINI_AVAILABLE:
     st.error("❌ Google Gemini package not installed")
-    st.code("pip install google-generativeai", language="bash")
+    st.code("pip install google-genai", language="bash")
     st.info("Install the package and restart the app to enable AI analysis")
-elif not gemini_api_key:
+elif gemini_client is None:
     st.warning("⚠️ Enter your Gemini API key in the sidebar to enable AI analysis")
     st.info("Get a free API key at: https://aistudio.google.com/app/apikey")
 else:
@@ -764,15 +722,14 @@ Be specific, actionable, and focused on pressure dynamics and momentum. This is 
 
                 # Store initial context for follow-ups
                 st.session_state.initial_context_pressure = context
-                
+
                 # Call Gemini API
-                model = genai.GenerativeModel('gemini-2.5-flash')
-                response = model.generate_content(context)
-                
+                response_text = utils.gemini_generate(gemini_client, context)
+
                 # Clear previous chat and add initial exchange
                 st.session_state.chat_history_pressure = [
                     {"role": "user", "content": "Analyze this pressure and momentum data"},
-                    {"role": "assistant", "content": response.text}
+                    {"role": "assistant", "content": response_text}
                 ]
                 
                 st.rerun()
@@ -814,29 +771,19 @@ Be specific, actionable, and focused on pressure dynamics and momentum. This is 
         if send_button and follow_up:
             with st.spinner("Thinking..."):
                 try:
-                    # Build conversation history for context
-                    conversation = [{"role": "user", "parts": [st.session_state.initial_context_pressure]}]
-                    
-                    for msg in st.session_state.chat_history_pressure:
-                        conversation.append({
-                            "role": "user" if msg["role"] == "user" else "model",
-                            "parts": [msg["content"]]
-                        })
-                    
-                    # Add new question
-                    conversation.append({"role": "user", "parts": [follow_up]})
-                    
-                    # Call Gemini with full conversation
-                    model = genai.GenerativeModel('gemini-2.5-flash')
-                    chat = model.start_chat(history=conversation[:-1])
-                    response = chat.send_message(follow_up)
-                    
+                    reply = utils.gemini_chat_reply(
+                        gemini_client,
+                        st.session_state.initial_context_pressure,
+                        st.session_state.chat_history_pressure,
+                        follow_up,
+                    )
+
                     # Add to chat history
                     st.session_state.chat_history_pressure.append({"role": "user", "content": follow_up})
-                    st.session_state.chat_history_pressure.append({"role": "assistant", "content": response.text})
-                    
+                    st.session_state.chat_history_pressure.append({"role": "assistant", "content": reply})
+
                     st.rerun()
-                    
+
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
         

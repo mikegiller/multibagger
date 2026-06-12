@@ -4,12 +4,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import yfinance as yf
-import os
-import yfinance.cache as _yfc
-# yfinance's tz cache can break if its dir was deleted; replace with dummy to bypass SQLite
-os.makedirs(os.path.join(os.path.expanduser('~'), '.cache', 'py-yfinance'), exist_ok=True)
-_yfc._TzCacheManager._tz_cache = _yfc._TzCacheDummy()
-_yfc._CookieCacheManager._Cookie_cache = _yfc._CookieCacheDummy()
+import utils  # applies the yfinance cache workaround on import
 from io import BytesIO
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 from openpyxl import load_workbook
@@ -17,15 +12,6 @@ from openpyxl.styles import PatternFill, Font, Alignment
 from openpyxl.utils import get_column_letter
 from openpyxl.formatting.rule import CellIsRule
 import plotly.graph_objects as go
-import json
-
-
-# Optional: Google Gemini (only needed for AI analysis)
-try:
-    import google.generativeai as genai
-    GEMINI_AVAILABLE = True
-except ImportError:
-    GEMINI_AVAILABLE = False
 
 TODAY = datetime.now()
 
@@ -36,71 +22,39 @@ st.info("**Purpose:** Find the best-performing LEAPS and future options under di
 st.write("Enter a ticker to view call options, toggle columns, and see return potential graph (positive only).")
 
 # --- Gemini API Key Setup (in sidebar) ──────────────────────────────
-with st.sidebar:
-    st.header("🤖 AI Analysis Settings")
-    
-    if not GEMINI_AVAILABLE:
-        st.warning("⚠️ Google Gemini not installed")
-        st.code("pip install google-generativeai", language="bash")
-        gemini_api_key = None
-    else:
-        gemini_api_key = st.text_input(
-            "Gemini API Key", 
-            type="password",
-            help="Get free API key at: https://aistudio.google.com/app/apikey",
-            value=""
-        )
-        
-        if gemini_api_key:
-            try:
-                genai.configure(api_key=gemini_api_key)
-                st.success("✅ Gemini API configured")
-            except Exception as e:
-                st.error(f"❌ API configuration failed: {str(e)}")
-        else:
-            st.info("💡 Add API key to enable AI analysis")
-        
-        st.markdown("---")
-        st.caption("**Free Tier**: 1,500 requests/day")
-        st.caption("[Get API Key →](https://aistudio.google.com/app/apikey)")
+gemini_client = utils.gemini_sidebar()
 
 # --- Session state ---
-for key in ["ticker_input", "expiry", "calls_data", "summary_data", "column_names", "actual_percentages", "last_fetched_ticker", "last_fetched_expiry"]:
+_STATE_KEYS = ["expiry", "calls_data", "summary_data", "column_names",
+               "actual_percentages", "last_fetched_ticker", "last_fetched_expiry"]
+for key in _STATE_KEYS:
     if key not in st.session_state:
         st.session_state[key] = None
 
 # --- Reset button ---
 if st.button("🔄 Reset"):
-    for key in ["ticker_input", "expiry", "calls_data", "summary_data", "column_names", "actual_percentages", "last_fetched_ticker", "last_fetched_expiry"]:
+    for key in _STATE_KEYS:
         st.session_state[key] = None
 
 # --- Favorites ---
-def _load_favorites():
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "favorites.json")
-    try:
-        with open(path) as f:
-            return json.load(f)
-    except Exception:
-        return ["SPY", "QQQ", "VOO", "XLK", "NVDA"]
-
-_favs = _load_favorites()
+_favs = utils.load_favorites()
 
 if "fav" in st.query_params and st.query_params["fav"] in _favs:
-    st.session_state.ticker_input = st.query_params["fav"]
+    st.session_state.ode_ticker = st.query_params["fav"]
+    utils.set_active_ticker(st.query_params["fav"])
     st.session_state.calls_data = None
     st.session_state.expiry = None
     del st.query_params["fav"]
 
-_fav_links = ", ".join([f'<a href="?fav={f}" target="_self" style="text-decoration:none">{f}</a>' for f in _favs])
-st.markdown(f"**Favorites:** {_fav_links}", unsafe_allow_html=True)
+st.markdown(utils.favorites_html(_favs), unsafe_allow_html=True)
 
 # --- Ticker input ---
-ticker_input = st.text_input("Enter ticker symbol (required):", value=st.session_state.ticker_input or "").upper()
+ticker_input = utils.ticker_input("ode_ticker", label="Enter ticker symbol (required):")
 # Clear cached data when ticker changes
-if ticker_input != st.session_state.ticker_input:
+if ticker_input != st.session_state.get("_ode_prev_ticker"):
     st.session_state.calls_data = None
     st.session_state.expiry = None
-st.session_state.ticker_input = ticker_input
+st.session_state._ode_prev_ticker = ticker_input
 
 # --- Fetch expirations ---
 expirations = []
@@ -139,7 +93,7 @@ if expirations:
             selected_index = expiry_options.index(prev_label)
 
     selected_label = st.selectbox(
-        "Select expiration date (oldest first):",
+        "Select expiration date (furthest first):",
         expiry_options,
         index=selected_index
     )
@@ -184,7 +138,7 @@ def fetch_option_data_cached(ticker_input, expiry):
         calls = calls[calls["lastTradeDate"] >= cutoff_date]
 
     if calls.empty:
-        return summary_df, None, []
+        return summary_df, None, [], []
 
     cols = ["strike", "lastPrice", "bid", "ask", "volume", "openInterest", "impliedVolatility", "inTheMoney"]
     calls = calls[cols].copy()
@@ -233,6 +187,9 @@ else:
 if summary_df is not None:
     st.subheader("Summary")
     st.dataframe(summary_df.round(2))
+
+# Optimal strike from the return chart; stays None if the chart didn't render
+best_strike = None
 
 # --- Call Options section ---
 if calls is not None and not calls.empty:
@@ -469,11 +426,11 @@ if calls is not None and summary_df is not None:
     if "initial_context_calls" not in st.session_state:
         st.session_state.initial_context_calls = None
 
-    if not GEMINI_AVAILABLE:
+    if not utils.GEMINI_AVAILABLE:
         st.error("❌ Google Gemini package not installed")
-        st.code("pip install google-generativeai", language="bash")
+        st.code("pip install google-genai", language="bash")
         st.info("Install the package and restart the app to enable AI analysis")
-    elif not gemini_api_key:
+    elif gemini_client is None:
         st.warning("⚠️ Enter your Gemini API key in the sidebar to enable AI analysis")
         st.info("Get a free API key at: https://aistudio.google.com/app/apikey")
     else:
@@ -557,15 +514,14 @@ Be specific with numbers. Focus on income generation and risk management for cov
 
                     # Store initial context for follow-ups
                     st.session_state.initial_context_calls = context
-                    
+
                     # Call Gemini API
-                    model = genai.GenerativeModel('gemini-2.5-flash')
-                    response = model.generate_content(context)
-                    
+                    response_text = utils.gemini_generate(gemini_client, context)
+
                     # Clear previous chat and add initial exchange
                     st.session_state.chat_history_calls = [
                         {"role": "user", "content": "Analyze these covered call options"},
-                        {"role": "assistant", "content": response.text}
+                        {"role": "assistant", "content": response_text}
                     ]
                     
                     st.rerun()
@@ -607,29 +563,19 @@ Be specific with numbers. Focus on income generation and risk management for cov
             if send_button and follow_up:
                 with st.spinner("Thinking..."):
                     try:
-                        # Build conversation history for context
-                        conversation = [{"role": "user", "parts": [st.session_state.initial_context_calls]}]
-                        
-                        for msg in st.session_state.chat_history_calls:
-                            conversation.append({
-                                "role": "user" if msg["role"] == "user" else "model",
-                                "parts": [msg["content"]]
-                            })
-                        
-                        # Add new question
-                        conversation.append({"role": "user", "parts": [follow_up]})
-                        
-                        # Call Gemini with full conversation
-                        model = genai.GenerativeModel('gemini-2.5-flash')
-                        chat = model.start_chat(history=conversation[:-1])
-                        response = chat.send_message(follow_up)
-                        
+                        reply = utils.gemini_chat_reply(
+                            gemini_client,
+                            st.session_state.initial_context_calls,
+                            st.session_state.chat_history_calls,
+                            follow_up,
+                        )
+
                         # Add to chat history
                         st.session_state.chat_history_calls.append({"role": "user", "content": follow_up})
-                        st.session_state.chat_history_calls.append({"role": "assistant", "content": response.text})
-                        
+                        st.session_state.chat_history_calls.append({"role": "assistant", "content": reply})
+
                         st.rerun()
-                        
+
                     except Exception as e:
                         st.error(f"Error: {str(e)}")
             

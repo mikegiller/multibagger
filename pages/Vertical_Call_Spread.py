@@ -1,13 +1,8 @@
 import streamlit as st
 import yfinance as yf
-import os
-import yfinance.cache as _yfc
-# yfinance's tz cache can break if its dir was deleted; replace with dummy to bypass SQLite
-os.makedirs(os.path.join(os.path.expanduser('~'), '.cache', 'py-yfinance'), exist_ok=True)
-_yfc._TzCacheManager._tz_cache = _yfc._TzCacheDummy()
-_yfc._CookieCacheManager._Cookie_cache = _yfc._CookieCacheDummy()
+import utils  # applies the yfinance cache workaround on import
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 
 st.set_page_config(page_title="Vertical Call Spread Finder", layout="wide")
@@ -17,12 +12,13 @@ st.info("**Purpose:** Model vertical call spread P&L for event-driven moves like
 
 # --- REFRESH BUTTON ---
 if st.button("🔄 Refresh / Clear All"):
-    for key in list(st.session_state.keys()):
-        del st.session_state[key]
+    # Only clear this page's keys so other pages keep their state
+    for key in ["vcs_ticker", "vcs_upside", "vcs_expiration"]:
+        st.session_state.pop(key, None)
     st.rerun()
 
 # --- USER INPUTS ---
-ticker_symbol = st.text_input("Enter stock ticker (e.g., AAPL):", key="ticker_input").upper()
+ticker_symbol = utils.ticker_input("vcs_ticker", label="Enter stock ticker (e.g., AAPL):")
 
 if ticker_symbol:
     try:
@@ -40,7 +36,7 @@ if ticker_symbol:
                 min_value=0.0,
                 value=10.0,
                 step=1.0,
-                key="upside_input"
+                key="vcs_upside"
             )
 
             expirations = ticker.options
@@ -50,7 +46,7 @@ if ticker_symbol:
                 expiration = st.selectbox(
                     "Select option expiration date:",
                     expirations,
-                    key="expiration_select"
+                    key="vcs_expiration"
                 )
 
                 if st.button("Find Best Call Spreads"):
@@ -66,7 +62,7 @@ if ticker_symbol:
                         calls["lastTradeDate"] = pd.to_datetime(calls["lastTradeDate"]).dt.tz_localize(None)
 
                         # Filter to recent trades (<= 3 days old)
-                        now = datetime.utcnow()
+                        now = datetime.now(timezone.utc).replace(tzinfo=None)
                         recent_cutoff = now - timedelta(days=3)
                         calls = calls[calls["lastTradeDate"] >= recent_cutoff]
 
