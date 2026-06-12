@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="Vertical Call Spread Finder", layout="wide")
 
 st.title("📈 Vertical Call Spread Finder")
+st.info("**Purpose:** Model vertical call spread P&L for event-driven moves like earnings. Built for bullish directional plays with capped risk and defined max loss.")
 
 # --- REFRESH BUTTON ---
 if st.button("🔄 Refresh / Clear All"):

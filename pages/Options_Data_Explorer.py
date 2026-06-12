@@ -32,6 +32,7 @@ TODAY = datetime.now()
 # --- Page settings ---
 st.set_page_config(page_title="Call Options Viewer", layout="wide")
 st.title("📈 Call Options Viewer")
+st.info("**Purpose:** Find the best-performing LEAPS and future options under different annual growth assumptions (5%, 10%, 15%, etc.). Useful for building long-term positions with defined risk.")
 st.write("Enter a ticker to view call options, toggle columns, and see return potential graph (positive only).")
 
 # --- Gemini API Key Setup (in sidebar) ──────────────────────────────

@@ -5,16 +5,12 @@ st.set_page_config(page_title="Options Analysis Hub", layout="wide")
 
 st.title("🧭 Options Analysis Hub")
 
-st.markdown("""
-Welcome to your options trading toolkit!  
-Select a tool below to analyze spreads or view option data.
-""")
+st.markdown("Your personal toolkit for options analysis, sentiment, and market structure. Select a tool below or use the sidebar.")
 
 st.divider()
 
-st.subheader("Available Tools")
+st.subheader("Core Tools")
 
-# Main prominent tools
 col1, col2, col3 = st.columns(3)
 
 with col1:
@@ -24,6 +20,7 @@ with col1:
         icon="📈",
         use_container_width=True
     )
+    st.caption("Find best LEAPS and future options under different annual growth assumptions (5%, 10%, 15%).")
 
 with col2:
     st.page_link(
@@ -32,6 +29,7 @@ with col2:
         icon="📊",
         use_container_width=True
     )
+    st.caption("Gauge bullish/bearish conviction via OBV, PVT, MACD, options activity, and overall sentiment score.")
 
 with col3:
     st.page_link(
@@ -40,7 +38,9 @@ with col3:
         icon="📐",
         use_container_width=True
     )
+    st.caption("Project future price targets using linear regression, moving averages, and other trend overlays.")
 
+st.divider()
 st.subheader("Market Analysis")
 
 st.page_link(
@@ -49,20 +49,24 @@ st.page_link(
     icon="🔄",
     use_container_width=True
 )
-
-# Collapsed section for other tools
-with st.expander("Other ▼", expanded=False):
-    st.page_link(
-        "pages/Vertical_Call_Spread.py", 
-        label="Vertical Call Spread Finder", 
-        icon="📈"
-    )
-    
-    st.page_link(
-        "pages/Vertical_Put_Spread.py", 
-        label="Vertical Put Spread Finder", 
-        icon="📉"
-    )
+st.caption("Track where money is flowing across asset classes and sectors. Good for reading broad market rotation.")
 
 st.divider()
-st.info("Use the navigation links above or the sidebar to launch each specialized app.")
+st.subheader("Spread Tools")
+
+with st.expander("Less frequently used", expanded=False):
+    col6, col7 = st.columns(2)
+    with col6:
+        st.page_link(
+            "pages/Vertical_Call_Spread.py",
+            label="Vertical Call Spread Finder",
+            icon="📈"
+        )
+        st.caption("Model bullish vertical call spreads for event-driven moves like earnings.")
+    with col7:
+        st.page_link(
+            "pages/Vertical_Put_Spread.py",
+            label="Vertical Put Spread Finder",
+            icon="📉"
+        )
+        st.caption("Model bearish vertical put spreads for event-driven moves like earnings.")

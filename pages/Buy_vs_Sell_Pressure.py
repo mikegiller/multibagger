@@ -31,6 +31,7 @@ except ImportError:
 st.set_page_config(page_title="Pressure Dashboard", layout="wide", initial_sidebar_state="expanded")
 
 st.title("Buying vs Selling Pressure")
+st.info("**Purpose:** Gauge bullish or bearish conviction for a ticker. Goes beyond a standard price chart by showing volume-weighted momentum (OBV, PVT), directional signals (MACD), notable options activity, and an overall sentiment score with full breakdown.")
 st.write("")
 
 # === Favorites ===

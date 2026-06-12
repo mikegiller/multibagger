@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="Vertical Put Spread Finder", layout="wide")
 
 st.title("📉 Vertical Put Spread Finder")
+st.info("**Purpose:** Model vertical put spread P&L for event-driven moves like earnings. Built for bearish directional plays with capped risk and defined max loss.")
 
 # --- REFRESH BUTTON ---
 if st.button("🔄 Refresh / Clear All"):

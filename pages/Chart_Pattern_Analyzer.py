@@ -13,6 +13,7 @@ import json
 
 st.set_page_config(page_title="Chart Pattern Analyzer", layout="wide")
 st.title("Chart Pattern Analyzer")
+st.info("**Purpose:** Project future price targets based on existing trends. Applies technical overlays — linear regression channels, moving averages, and more — to identify where price is likely heading.")
 
 # === Favorites ===
 def _load_favorites():

@@ -12,7 +12,7 @@ from datetime import date, timedelta
 
 st.set_page_config(page_title="Capital Reallocation", layout="wide")
 st.title("Capital Reallocation")
-st.caption("ETF price-based proxy for tracking money rotation across asset classes and sectors")
+st.info("**Purpose:** Track where money is flowing across asset classes and sectors using ETF price action as a proxy. Used periodically to read broad market sentiment and identify rotation trends.")
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
