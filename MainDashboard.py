@@ -9,6 +9,18 @@ st.markdown("Your personal toolkit for options analysis, sentiment, and market s
 
 st.divider()
 
+st.subheader("⭐ Featured")
+
+st.page_link(
+    "pages/Master_Plan.py",
+    label="Master Plan",
+    icon="🗺️",
+    use_container_width=True
+)
+st.caption("Project price along its trend, then find the optimum call strike to buy for every expiration based on the projected price. Combines the Chart Pattern Analyzer and Options Data Explorer.")
+
+st.divider()
+
 st.subheader("Core Tools")
 
 col1, col2, col3 = st.columns(3)
