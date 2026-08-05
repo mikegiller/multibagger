@@ -60,7 +60,7 @@ btn_cols = st.columns(len(PERIOD_LABELS))
 for i, label in enumerate(PERIOD_LABELS):
     with btn_cols[i]:
         btn_type = "primary" if st.session_state.cr_period == label else "secondary"
-        if st.button(label, key=f"cr_btn_{label}", use_container_width=True, type=btn_type):
+        if st.button(label, key=f"cr_btn_{label}", width='stretch', type=btn_type):
             st.session_state.cr_period = label
             st.rerun()
 
@@ -143,7 +143,7 @@ fig_ac.update_layout(
     plot_bgcolor="rgba(0,0,0,0)",
     paper_bgcolor="rgba(0,0,0,0)",
 )
-st.plotly_chart(fig_ac, use_container_width=True)
+st.plotly_chart(fig_ac, width='stretch')
 
 # Returns summary table
 table_rows = []
@@ -158,7 +158,7 @@ for tkr, label, asset_class, _ in ASSET_CLASSES:
 
 st.dataframe(
     pd.DataFrame(table_rows).set_index("Ticker"),
-    use_container_width=True,
+    width='stretch',
 )
 
 st.divider()
@@ -209,7 +209,7 @@ with col1:
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
     )
-    st.plotly_chart(fig_heat, use_container_width=True)
+    st.plotly_chart(fig_heat, width='stretch')
 
 with col2:
     bar_pairs = [
@@ -243,6 +243,6 @@ with col2:
             plot_bgcolor="rgba(0,0,0,0)",
             paper_bgcolor="rgba(0,0,0,0)",
         )
-        st.plotly_chart(fig_bar, use_container_width=True)
+        st.plotly_chart(fig_bar, width='stretch')
     else:
         st.info("No sector data available for this period.")

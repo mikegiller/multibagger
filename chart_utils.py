@@ -457,7 +457,7 @@ def render_projection_table(proj_df, vs_col):
         .map(_style_direction, subset=["Direction"])
         .map(_style_vs, subset=[f"vs Current ({vs_col})"])
     )
-    st.dataframe(styled, use_container_width=True, hide_index=True)
+    st.dataframe(styled, width='stretch', hide_index=True)
 
 
 def pct_label(pct):

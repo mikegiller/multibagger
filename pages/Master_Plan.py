@@ -260,7 +260,7 @@ def render_master_plan(chains, last_date, linreg, current_price, is_weekly, acti
             "Projected Return": "{:+.2f}%",
         })
     )
-    st.dataframe(styled, use_container_width=True, hide_index=True)
+    st.dataframe(styled, width='stretch', hide_index=True)
     st.caption(
         "Projected Price = LinReg-center trend extrapolated to each expiration date. "
         "Optimum Strike = the call maximizing "
@@ -289,7 +289,7 @@ with tab_st:
     _st_per_cols = st.columns(len(ST_PERIOD_OPTS))
     for i, (k, lbl) in enumerate(ST_PERIOD_OPTS.items()):
         with _st_per_cols[i]:
-            st.button(lbl, key=f"mp_stper_{k}", use_container_width=True,
+            st.button(lbl, key=f"mp_stper_{k}", width='stretch',
                       on_click=lambda _k=k: st.session_state.update({"mp_period": _k}))
             pct = period_changes.get(k)
             if pct is not None:
@@ -302,7 +302,7 @@ with tab_st:
     _st_hor_cols = st.columns(len(ST_HORIZON_OPTS))
     for i, (k, bars) in enumerate(ST_HORIZON_OPTS.items()):
         with _st_hor_cols[i]:
-            st.button(k, key=f"mp_sthor_{k.replace(' ','_')}", use_container_width=True,
+            st.button(k, key=f"mp_sthor_{k.replace(' ','_')}", width='stretch',
                       on_click=lambda _k=k: st.session_state.update({"mp_horizon": _k}))
     horizon_label = st.session_state.mp_horizon
     horizon_bars  = ST_HORIZON_OPTS[horizon_label]
@@ -378,7 +378,7 @@ with tab_st:
             linreg_data, tl_data, ma_data, fib_data, bb_data, sr_data, show,
             ticker, title_suffix=" (Daily)", tool_name="Master Plan",
         )
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig, width='stretch', config={"displayModeBar": False})
 
         ST_TARGETS = {"+1 Week": 5, "+2 Weeks": 10, "+1 Month": 21, "+3 Months": 65}
         proj_df = build_projection_table(
@@ -410,7 +410,7 @@ with tab_lt:
     _lt_per_cols = st.columns(len(LT_PERIOD_OPTS))
     for i, (k, lbl) in enumerate(LT_PERIOD_OPTS.items()):
         with _lt_per_cols[i]:
-            st.button(lbl, key=f"mp_ltper_{k}", use_container_width=True,
+            st.button(lbl, key=f"mp_ltper_{k}", width='stretch',
                       on_click=lambda _k=k: st.session_state.update({"mp_lt_period": _k}))
             pct = lt_period_changes.get(k)
             if pct is not None:
@@ -423,7 +423,7 @@ with tab_lt:
     _lt_hor_cols = st.columns(len(LT_HORIZON_OPTS))
     for i, (k, bars) in enumerate(LT_HORIZON_OPTS.items()):
         with _lt_hor_cols[i]:
-            st.button(k, key=f"mp_lthor_{k.replace(' ','_')}", use_container_width=True,
+            st.button(k, key=f"mp_lthor_{k.replace(' ','_')}", width='stretch',
                       on_click=lambda _k=k: st.session_state.update({"mp_lt_horizon": _k}))
     lt_horizon_label = st.session_state.mp_lt_horizon
     lt_horizon_bars  = LT_HORIZON_OPTS[lt_horizon_label]
@@ -502,7 +502,7 @@ with tab_lt:
             lt_linreg, lt_tl, lt_ma, lt_fib_d, lt_bb, lt_sr, show_lt,
             ticker, title_suffix=" (Weekly)", is_weekly=True, tool_name="Master Plan",
         )
-        st.plotly_chart(fig_lt, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_lt, width='stretch', config={"displayModeBar": False})
 
         LT_TARGETS = {"+3 Months": 13, "+6 Months": 26, "+1 Year": 52, "+2 Years": 104}
         proj_df_lt = build_projection_table(

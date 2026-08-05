@@ -15,7 +15,7 @@ st.page_link(
     "pages/Master_Plan.py",
     label="Master Plan",
     icon="🗺️",
-    use_container_width=True
+    width='stretch'
 )
 st.caption("Project price along its trend, then find the optimum call strike to buy for every expiration based on the projected price. Combines the Chart Pattern Analyzer and Options Data Explorer.")
 
@@ -30,7 +30,7 @@ with col1:
         "pages/Options_Data_Explorer.py",
         label="Options Data Explorer",
         icon="📈",
-        use_container_width=True
+        width='stretch'
     )
     st.caption("Find best LEAPS and future options under different annual growth assumptions (5%, 10%, 15%).")
 
@@ -39,7 +39,7 @@ with col2:
         "pages/Buy_vs_Sell_Pressure.py",
         label="Buy vs Sell Pressure",
         icon="📊",
-        use_container_width=True
+        width='stretch'
     )
     st.caption("Gauge bullish/bearish conviction via OBV, PVT, MACD, options activity, and overall sentiment score.")
 
@@ -48,7 +48,7 @@ with col3:
         "pages/Chart_Pattern_Analyzer.py",
         label="Chart Pattern Analyzer",
         icon="📐",
-        use_container_width=True
+        width='stretch'
     )
     st.caption("Project future price targets using linear regression, moving averages, and other trend overlays.")
 
@@ -59,7 +59,7 @@ st.page_link(
     "pages/Capital_Reallocation.py",
     label="Capital Reallocation",
     icon="🔄",
-    use_container_width=True
+    width='stretch'
 )
 st.caption("Track where money is flowing across asset classes and sectors. Good for reading broad market rotation.")
 

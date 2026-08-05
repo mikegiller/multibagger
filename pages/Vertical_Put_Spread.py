@@ -132,7 +132,7 @@ if ticker_symbol:
                                     })
                                 )
 
-                                st.dataframe(styled_df, use_container_width=True)
+                                st.dataframe(styled_df, width='stretch')
 
     except Exception as e:
         st.error(f"Error fetching data for {ticker_symbol}: {e}")

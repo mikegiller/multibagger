@@ -185,7 +185,7 @@ cols = st.columns(len(period_options))
 selected_period = None
 for i, (key, label) in enumerate(period_options.items()):
     with cols[i]:
-        if st.button(label, key=f"btn_{key}", use_container_width=True):
+        if st.button(label, key=f"btn_{key}", width='stretch'):
             selected_period = key
         pct = period_changes.get(key)
         if pct is not None:
@@ -396,7 +396,7 @@ def plot(fig, title=None, height=380):
     fig.update_yaxes(fixedrange=True)
     if st.session_state.zoom_range:
         fig.update_xaxes(range=st.session_state.zoom_range)
-    st.plotly_chart(fig, use_container_width=True, config=config)
+    st.plotly_chart(fig, width='stretch', config=config)
 
 # === Layout ===
 col_left, col_right = st.columns([3.4, 1])
@@ -517,7 +517,7 @@ with col_left:
     if st.session_state.zoom_range:
         fig1.update_xaxes(range=st.session_state.zoom_range)
 
-    st.plotly_chart(fig1, use_container_width=True, config=config)
+    st.plotly_chart(fig1, width='stretch', config=config)
 
     # 2. OBV & PVT — Toggleable
     st.subheader("OBV & PVT")
@@ -603,7 +603,7 @@ elif gemini_client is None:
     st.info("Get a free API key at: https://aistudio.google.com/app/apikey")
 else:
     # Initial Analysis Button
-    if st.button("🔍 Generate AI Pressure Analysis", type="primary", use_container_width=True):
+    if st.button("🔍 Generate AI Pressure Analysis", type="primary", width='stretch'):
         with st.spinner("Analyzing buying/selling pressure with Gemini AI..."):
             try:
                 # Prepare context for AI
@@ -761,9 +761,9 @@ Be specific, actionable, and focused on pressure dynamics and momentum. This is 
         
         col1, col2 = st.columns([1, 5])
         with col1:
-            send_button = st.button("Send", type="primary", use_container_width=True)
+            send_button = st.button("Send", type="primary", width='stretch')
         with col2:
-            if st.button("🗑️ Clear Conversation", use_container_width=True):
+            if st.button("🗑️ Clear Conversation", width='stretch'):
                 st.session_state.chat_history_pressure = []
                 st.session_state.initial_context_pressure = None
                 st.rerun()

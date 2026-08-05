@@ -351,7 +351,7 @@ if calls is not None and not calls.empty:
                 margin=dict(l=40, r=40, t=80, b=60)
             )
 
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         else:
             st.info("Select at least one percentage column above to show the return chart.")
 
@@ -435,7 +435,7 @@ if calls is not None and summary_df is not None:
         st.info("Get a free API key at: https://aistudio.google.com/app/apikey")
     else:
         # Initial Analysis Button
-        if st.button("🔍 Generate AI Covered Call Strategy", type="primary", use_container_width=True):
+        if st.button("🔍 Generate AI Covered Call Strategy", type="primary", width='stretch'):
             with st.spinner("Analyzing options data with Gemini AI..."):
                 try:
                     # Prepare context for AI
@@ -553,9 +553,9 @@ Be specific with numbers. Focus on income generation and risk management for cov
             
             col1, col2 = st.columns([1, 5])
             with col1:
-                send_button = st.button("Send", type="primary", use_container_width=True)
+                send_button = st.button("Send", type="primary", width='stretch')
             with col2:
-                if st.button("🗑️ Clear Conversation", use_container_width=True):
+                if st.button("🗑️ Clear Conversation", width='stretch'):
                     st.session_state.chat_history_calls = []
                     st.session_state.initial_context_calls = None
                     st.rerun()
