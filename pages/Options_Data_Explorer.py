@@ -140,14 +140,22 @@ def fetch_option_data_cached(ticker_input, expiry):
     if calls.empty:
         return summary_df, None, [], []
 
-    cols = ["strike", "lastPrice", "bid", "ask", "volume", "openInterest", "impliedVolatility", "inTheMoney"]
+    cols = ["strike", "lastPrice", "bid", "ask", "volume", "openInterest", "impliedVolatility", "inTheMoney", "lastTradeDate"]
     calls = calls[cols].copy()
     calls["middle"] = ((calls["bid"] + calls["ask"]) / 2).round(2)
     calls["impliedVolatility"] = (calls["impliedVolatility"]*100).round(2)
 
+    # No bid/ask market (common on illiquid far-dated LEAPS): fall back to lastPrice
+    # if it's from a recent trade, otherwise leave middle at 0 so the return% is N/A.
+    recent_cutoff = (pd.Timestamp(TODAY.date()) - pd.tseries.offsets.BDay(3)).date()
+    use_last_price = (calls["middle"] == 0) & (calls["lastPrice"] > 0) & (calls["lastTradeDate"] >= recent_cutoff)
+    calls.loc[use_last_price, "middle"] = calls.loc[use_last_price, "lastPrice"]
+    calls = calls.drop(columns=["lastTradeDate"])
+
     percentages = [5, 10, 15, 20, 25, 30, 35, 40]
     column_names = []
     actual_percentages = []
+    has_middle = calls["middle"] > 0
     for pct in percentages:
         if years_to_expiry <= 1:
             actual_pct = pct
@@ -158,8 +166,10 @@ def fetch_option_data_cached(ticker_input, expiry):
         actual_percentages.append(actual_pct)
         col_name = f"{ticker_input}: {pct}% - {target}"
         column_names.append(col_name)
-        calls[col_name] = ((target - (calls["strike"] + calls["middle"])) / calls["middle"]) * 100
-        calls[col_name] = calls[col_name].round(2).astype(str) + "%"
+        ret = pd.Series(np.nan, index=calls.index)
+        ret[has_middle] = ((target - (calls.loc[has_middle, "strike"] + calls.loc[has_middle, "middle"])) / calls.loc[has_middle, "middle"]) * 100
+        calls[col_name] = ret.round(2).astype(str) + "%"
+        calls.loc[~has_middle, col_name] = "N/A"
 
     front_cols = ["strike", "middle", "volume"]
     other_cols = [c for c in calls.columns if c not in front_cols]
@@ -244,8 +254,10 @@ if calls is not None and not calls.empty:
 
         for col in show_cols:
             if col in display_df.columns:
-                col_numeric = display_df[col].str.rstrip('%').astype(float)
-                max_val = col_numeric.replace([float('inf'), float('-inf')], pd.NA).max() or 0
+                col_numeric = pd.to_numeric(display_df[col].str.rstrip('%'), errors='coerce')
+                max_val = col_numeric.replace([float('inf'), float('-inf')], pd.NA).max()
+                if pd.isna(max_val):
+                    max_val = 0
                 js_code = JsCode(f"""
                 function(params) {{
                     if (!params.value) return {{}};
@@ -286,7 +298,7 @@ if calls is not None and not calls.empty:
             col_returns = {}
             
             for col_name in show_cols:
-                numeric_col = display_calls[col_name].str.rstrip('%').astype(float)
+                numeric_col = pd.to_numeric(display_calls[col_name].str.rstrip('%'), errors='coerce')
                 positive_mask = (numeric_col > 0) & numeric_col.notna() & np.isfinite(numeric_col)
                 col_returns[col_name] = numeric_col
                 
@@ -324,7 +336,7 @@ if calls is not None and not calls.empty:
             # Plot individual lines
             for i, col_name in enumerate(show_cols):
                 pct_label = col_name.split(": ")[1].split(" - ")[0]
-                numeric_col = display_calls[col_name].str.rstrip('%').astype(float)
+                numeric_col = pd.to_numeric(display_calls[col_name].str.rstrip('%'), errors='coerce')
                 positive_mask = (numeric_col > 0) & numeric_col.notna() & np.isfinite(numeric_col)
 
                 if positive_mask.any():
@@ -366,7 +378,7 @@ if calls is not None and not calls.empty:
             calls_excel = calls.copy()
             for col in column_names:
                 if col in calls_excel.columns:
-                    calls_excel[col] = calls_excel[col].str.rstrip('%').astype(float)
+                    calls_excel[col] = pd.to_numeric(calls_excel[col].str.rstrip('%'), errors='coerce')
             calls_excel.to_excel(writer, sheet_name="Calls", index=False, startrow=6)
         output.seek(0)
 
@@ -448,7 +460,7 @@ if calls is not None and summary_df is not None:
                     # Convert percentage columns to numeric for analysis
                     for col in column_names[:4]:  # First 4 percentage columns
                         if col in active_calls.columns:
-                            active_calls[f"{col}_numeric"] = active_calls[col].str.rstrip('%').astype(float)
+                            active_calls[f"{col}_numeric"] = pd.to_numeric(active_calls[col].str.rstrip('%'), errors='coerce')
                     
                     top_volume = active_calls.nlargest(5, 'volume')[
                         ['strike', 'middle', 'volume', 'openInterest', 'impliedVolatility']
