@@ -1,1 +1,4 @@
-["SPY", "QQQ", "VOO", "XLK", "NVDA", "MAGS", "^SPX", "^NDX", "^OEX"]
+{
+  "stocks": ["SPY", "QQQ", "VOO", "XLK", "NVDA", "MAGS"],
+  "index": ["^SPX", "^NDX", "^OEX"]
+}

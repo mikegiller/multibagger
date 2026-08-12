@@ -16,7 +16,7 @@ st.title("Chart Pattern Analyzer")
 st.info("**Purpose:** Project future price targets based on existing trends. Applies technical overlays — linear regression channels, moving averages, and more — to identify where price is likely heading.")
 
 # === Favorites ===
-_favs = utils.load_favorites()
+_favs = utils.load_favorites("stocks")
 
 # === Session State ===
 _defaults = {

@@ -22,7 +22,7 @@ st.info("**Purpose:** Gauge bullish or bearish conviction for a ticker. Goes bey
 st.write("")
 
 # === Favorites ===
-_favs = utils.load_favorites()
+_favs = utils.load_favorites("stocks")
 
 if "bvs_period" not in st.session_state:
     st.session_state.bvs_period = "1d"

@@ -21,16 +21,22 @@ except ImportError:
 GEMINI_MODEL = "gemini-2.5-flash"
 
 _ROOT = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_FAVORITES = ["SPY", "QQQ", "VOO", "XLK", "NVDA"]
+DEFAULT_FAVORITES = {
+    "stocks": ["SPY", "QQQ", "VOO", "XLK", "NVDA"],
+    "index": ["^SPX", "^NDX", "^OEX"],
+}
 
 
 # === Favorites ===
-def load_favorites():
+def load_favorites(category="stocks"):
+    """Favorites for a category ("stocks" or "index"), backed by favorites.json's
+    {"stocks": [...], "index": [...]} structure."""
     try:
         with open(os.path.join(_ROOT, "favorites.json")) as f:
-            return json.load(f)
+            data = json.load(f)
+        return data[category]
     except Exception:
-        return DEFAULT_FAVORITES
+        return DEFAULT_FAVORITES.get(category, [])
 
 
 def favorites_html(favs, extra_params=""):
@@ -42,26 +48,55 @@ def favorites_html(favs, extra_params=""):
     return f"**Favorites:** {links}"
 
 
-# === App-wide Active Ticker ===
-def set_active_ticker(t):
-    st.session_state.active_ticker = t
+# === Active Ticker (tracked separately per asset category) ===
+DEFAULT_ACTIVE_TICKER = {"stocks": "SPY", "index": "^SPX"}
 
 
-def ticker_input(widget_key, label="Ticker", **kwargs):
-    """Ticker text input backed by the app-wide active ticker.
+def set_active_ticker(t, category="stocks"):
+    st.session_state[f"active_ticker_{category}"] = t
+
+
+def ticker_input(widget_key, category="stocks", label="Ticker", **kwargs):
+    """Ticker text input backed by the category's active ticker.
 
     Streamlit drops widget-keyed state when a page isn't rendered, so each page
-    keeps its own widget key and seeds it from the shared `active_ticker` —
-    pick a ticker on one tool and every other tool opens with it.
+    keeps its own widget key and seeds it from the shared `active_ticker_<category>` —
+    pick a ticker on one stock tool and every other stock tool opens with it,
+    independently of whatever ticker is active on the index tools (and vice versa).
     """
-    if "active_ticker" not in st.session_state:
-        st.session_state.active_ticker = "SPY"
+    active_key = f"active_ticker_{category}"
+    if active_key not in st.session_state:
+        st.session_state[active_key] = DEFAULT_ACTIVE_TICKER.get(category, "SPY")
     if widget_key not in st.session_state:
-        st.session_state[widget_key] = st.session_state.active_ticker
+        st.session_state[widget_key] = st.session_state[active_key]
     t = st.text_input(label, key=widget_key, **kwargs).upper().strip()
     if t:
-        st.session_state.active_ticker = t
+        st.session_state[active_key] = t
     return t
+
+
+def is_index_ticker(ticker):
+    """Yahoo Finance indexes are prefixed with '^' (e.g. ^SPX, ^NDX, ^VIX)."""
+    return ticker.startswith("^")
+
+
+def warn_if_wrong_report(ticker, asset_class, stocks_page, index_page):
+    """On the wrong-asset-class report, warn and link to the right one.
+
+    asset_class is the report's own class ("stocks" or "index"); the check fires
+    when the entered ticker looks like the *other* class.
+    """
+    if not ticker:
+        return
+    ticker_is_index = is_index_ticker(ticker)
+    if asset_class == "index" and not ticker_is_index:
+        st.warning(f"⚠️ **{ticker}** looks like a stock or ETF ticker, not an index. "
+                   "This report is tuned for indexes (illiquid LEAPS handling, index favorites).")
+        st.page_link(stocks_page, label="Use the Stocks & ETFs report instead", icon="📈")
+    elif asset_class == "stocks" and ticker_is_index:
+        st.warning(f"⚠️ **{ticker}** looks like an index ticker, not a stock or ETF. "
+                   "For indexes, use the report below — it correctly handles illiquid index LEAPS.")
+        st.page_link(index_page, label="Use the Index report instead", icon="📈")
 
 
 # === Gemini AI helpers ===
