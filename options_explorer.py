@@ -10,12 +10,18 @@
 #     it, so the index variant reframes the Gemini prompt as a long call/LEAPS
 #     buying analysis instead.
 #   - a VIX context line shown only for indexes.
+#   - gap-filling: indexes also get illiquid strikes between two live-quoted
+#     strikes filled in via option_pricing.fill_illiquid_strikes (interpolated
+#     implied vol, repriced with Black-Scholes — never extrapolated beyond the
+#     liquid range). Filled cells are flagged is_estimated and excluded from
+#     the "optimum strike" pick so an estimate can never outrank a real quote.
 import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import yfinance as yf
 import utils  # applies the yfinance cache workaround on import
+import option_pricing
 from io import BytesIO
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 from openpyxl import load_workbook
@@ -92,7 +98,10 @@ ASSET_CONFIG = {
             "This is for buying long calls (or LEAPS) on a broad-market index as leveraged, "
             "capital-efficient exposure. The investor cannot own the index directly and is not "
             "selling covered calls against it — the goal is identifying the call strike/expiration "
-            "with the best projected return if the index reaches the target growth level."
+            "with the best projected return if the index reaches the target growth level. Some "
+            "illiquid strikes are marked Source=Est. — those prices are modeled (interpolated "
+            "implied vol, repriced via Black-Scholes), not a live tradeable quote. Treat Est. rows "
+            "as directional context only and prefer Source=Live strikes in your recommendation."
         ),
         "ai_format_block": """1. MARKET CONDITIONS: (2-3 sentences about current IV environment and what it means for call buyers)
 
@@ -158,13 +167,40 @@ def fetch_option_data_cached(ticker_input, expiry, use_lastprice_fallback):
     calls["impliedVolatility"] = (calls["impliedVolatility"]*100).round(2)
 
     if use_lastprice_fallback:
+        # A one-sided quote (bid>0 xor ask>0) produces a bogus nonzero "middle" that
+        # isn't a real two-sided market — treat it the same as no quote at all so it's
+        # neither trusted directly nor used as a gap-fill interpolation anchor below.
+        # (Found via backtesting: a single broken one-sided SPX LEAPS quote was
+        # corrupting the gap-fill estimate for its neighbors.)
+        one_sided = (calls["bid"] > 0) ^ (calls["ask"] > 0)
+        calls.loc[one_sided, "middle"] = 0.0
+
         # No bid/ask market (common on illiquid far-dated index LEAPS): fall back to
         # lastPrice if it's from a recent trade, otherwise leave middle at 0 so the
         # return% is N/A.
         recent_cutoff = (pd.Timestamp(TODAY.date()) - pd.tseries.offsets.BDay(3)).date()
         use_last_price = (calls["middle"] == 0) & (calls["lastPrice"] > 0) & (calls["lastTradeDate"] >= recent_cutoff)
         calls.loc[use_last_price, "middle"] = calls.loc[use_last_price, "lastPrice"]
+        # "Last Trade" isn't the same as "Live" — it's a recent print, not a current
+        # tradeable quote — so it gets its own label rather than being lumped in.
+        calls["Source"] = np.select(
+            [use_last_price, calls["middle"] > 0], ["Last Trade", "Live"], default="N/A"
+        )
         calls = calls.drop(columns=["lastTradeDate"])
+
+        # Fill remaining gaps (no live quote, no recent trade) that sit between two
+        # live-quoted strikes: interpolate implied vol between those anchors and
+        # reprice via Black-Scholes. Never extrapolates beyond the liquid range —
+        # see option_pricing.fill_illiquid_strikes.
+        precise_years_to_expiry = max(days_to_expiry, 0) / 365
+        risk_free_rate = option_pricing.fetch_risk_free_rate()
+        dividend_yield = option_pricing.dividend_yield_for(ticker_input)
+        calls = option_pricing.fill_illiquid_strikes(
+            calls, last_price, precise_years_to_expiry, risk_free_rate, dividend_yield
+        )
+        calls.loc[calls["is_estimated"], "Source"] = "Est."
+    else:
+        calls["is_estimated"] = False
 
     percentages = [5, 10, 15, 20, 25, 30, 35, 40]
     column_names = []
@@ -189,7 +225,10 @@ def fetch_option_data_cached(ticker_input, expiry, use_lastprice_fallback):
             calls[col_name] = ((target - (calls["strike"] + calls["middle"])) / calls["middle"]) * 100
             calls[col_name] = calls[col_name].round(2).astype(str) + "%"
 
-    front_cols = ["strike", "middle", "volume"]
+    front_cols = ["strike", "middle"]
+    if "Source" in calls.columns:
+        front_cols.append("Source")
+    front_cols.append("volume")
     other_cols = [c for c in calls.columns if c not in front_cols]
     calls = calls[front_cols + other_cols]
 
@@ -379,21 +418,26 @@ def render(asset_class):
                 if show:
                     show_cols.append(col_name)
 
-            # Visible columns for table
-            display_cols = ["strike", "middle", "volume"] + show_cols + \
+            # Visible columns for table — Source (Live/Est.) only exists for indexes
+            has_source_col = "Source" in display_calls.columns
+            display_cols = ["strike", "middle"] + (["Source"] if has_source_col else []) + ["volume"] + show_cols + \
                            ["lastPrice", "bid", "ask", "openInterest", "impliedVolatility", "inTheMoney"]
 
             display_df = display_calls[display_cols].copy()
 
             # Build AgGrid
             gb = GridOptionsBuilder.from_dataframe(display_df)
-            for col in ["strike", "middle", "volume"]:
+            pin_cols = ["strike", "middle"] + (["Source"] if has_source_col else []) + ["volume"]
+            for col in pin_cols:
                 gb.configure_column(col, pinned='left', cellStyle={'fontWeight': 'bold'})
 
             for col in show_cols:
                 if col in display_df.columns:
                     col_numeric = pd.to_numeric(display_df[col].str.rstrip('%'), errors='coerce')
-                    max_val = col_numeric.replace([float('inf'), float('-inf')], pd.NA).max()
+                    # Estimated (gap-filled) cells are never eligible to be "the max" —
+                    # a modeled price should never visually outrank a real quote.
+                    real_quote_numeric = col_numeric[~display_calls["is_estimated"].values]
+                    max_val = real_quote_numeric.replace([float('inf'), float('-inf')], pd.NA).max()
                     if pd.isna(max_val):
                         max_val = 0
                     js_code = JsCode(f"""
@@ -444,6 +488,11 @@ def render(asset_class):
                         all_positive_mask = positive_mask
                     else:
                         all_positive_mask &= positive_mask
+
+                # A gap-filled (modeled) price can never be crowned "the optimum" —
+                # only real, live-quoted strikes are eligible for the best-strike pick.
+                if all_positive_mask is not None:
+                    all_positive_mask &= ~display_calls["is_estimated"]
 
                 # Find strike with highest sum among intersection points
                 best_strike = None
@@ -510,10 +559,14 @@ def render(asset_class):
             blue_fill = PatternFill(start_color="5DADE2", end_color="5DADE2", fill_type="solid")
             orange_fill = PatternFill(start_color="F39C12", end_color="F39C12", fill_type="solid")
 
+            # Row-order flag (excel data rows start at 8) so the "best" highlight below
+            # can skip gap-filled (modeled) prices, same as the on-screen grid/chart.
+            is_estimated_list = calls["is_estimated"].tolist()
+
             output = BytesIO()
             with pd.ExcelWriter(output, engine="openpyxl") as writer:
                 summary_df.to_excel(writer, sheet_name="Calls", index=False, startrow=0)
-                calls_excel = calls.copy()
+                calls_excel = calls.drop(columns=["is_estimated"]).copy()
                 for col in column_names:
                     if col in calls_excel.columns:
                         calls_excel[col] = pd.to_numeric(calls_excel[col].str.rstrip('%'), errors='coerce')
@@ -546,7 +599,11 @@ def render(asset_class):
                     CellIsRule(operator='lessThan', formula=['0'], stopIfTrue=True, fill=blue_fill)
                 )
                 col_cells = [ws.cell(row=row, column=col_idx).value for row in range(8, ws.max_row + 1)]
-                numeric_vals = [v for v in col_cells if isinstance(v, (int, float))]
+                # Exclude gap-filled (modeled) prices from "best" eligibility here too.
+                numeric_vals = [
+                    v for v, est in zip(col_cells, is_estimated_list)
+                    if isinstance(v, (int, float)) and not est
+                ]
                 if numeric_vals:
                     max_val = max(numeric_vals)
                     ws.conditional_formatting.add(
@@ -601,9 +658,10 @@ def render(asset_class):
                             if col in active_calls.columns:
                                 active_calls[f"{col}_numeric"] = pd.to_numeric(active_calls[col].str.rstrip('%'), errors='coerce')
 
-                        top_volume = active_calls.nlargest(5, 'volume')[
-                            ['strike', 'middle', 'volume', 'openInterest', 'impliedVolatility']
-                        ].to_string(index=False)
+                        top_cols = ['strike', 'middle', 'volume', 'openInterest', 'impliedVolatility']
+                        if 'Source' in active_calls.columns:
+                            top_cols.append('Source')
+                        top_volume = active_calls.nlargest(5, 'volume')[top_cols].to_string(index=False)
 
                         # Find optimal strike from chart (if available)
                         optimal_strike_info = ""
