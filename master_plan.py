@@ -212,6 +212,8 @@ def render(asset_class):
         "lands on its projected price by that date* — the same return calc as the "
         "yellow-highlighted cell in Options Data Explorer."
     )
+    if asset_class == "index":
+        utils.vix_badge()
 
     # === Sidebar — Clear Cache only ===
     with st.sidebar:

@@ -3,6 +3,7 @@ import json
 import os
 
 import streamlit as st
+import yfinance as yf
 import yfinance.cache as _yfc
 
 # yfinance's tz cache can break if its dir was deleted; replace with dummy to bypass SQLite
@@ -97,6 +98,31 @@ def warn_if_wrong_report(ticker, asset_class, stocks_page, index_page):
         st.warning(f"⚠️ **{ticker}** looks like an index ticker, not a stock or ETF. "
                    "For indexes, use the report below — it correctly handles illiquid index LEAPS.")
         st.page_link(index_page, label="Use the Index report instead", icon="📈")
+
+
+# === VIX context (index-only volatility gauge) ===
+@st.cache_data(ttl=900, show_spinner=False)
+def fetch_vix():
+    """Current VIX close + percentile within the last year, or None if unavailable."""
+    try:
+        hist = yf.Ticker("^VIX").history(period="1y", interval="1d")
+        if hist.empty:
+            return None
+        current = float(hist["Close"].iloc[-1])
+        percentile = float((hist["Close"] < current).mean() * 100)
+        return {"level": current, "percentile_1y": percentile}
+    except Exception:
+        return None
+
+
+def vix_badge():
+    """Render a one-line VIX context caption. No-op if data is unavailable."""
+    vix = fetch_vix()
+    if vix is None:
+        return
+    level, pct = vix["level"], vix["percentile_1y"]
+    regime = "Low" if level < 15 else "Elevated" if level < 25 else "High"
+    st.caption(f"📉 **VIX: {level:.1f}** ({regime} volatility — {pct:.0f}th percentile of the last year)")
 
 
 # === Gemini AI helpers ===

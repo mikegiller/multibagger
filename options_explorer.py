@@ -1,11 +1,15 @@
 # options_explorer.py — shared Options Data Explorer logic for Stocks/ETFs and Indexes
 #
-# The two asset classes differ in exactly one place: index LEAPS chains routinely
-# have zero-bid/zero-ask strikes (wide, illiquid markets) that break a plain
-# (bid+ask)/2 mid-price calc into "inf%" return columns and a broken Excel export.
-# Stocks/ETFs rarely hit that case, so they keep the plain calc; indexes get a
-# lastPrice fallback. Everything else (fetch, grid, chart, Excel export, AI
-# analysis) is identical and shared here.
+# Fetch, grid, chart, and Excel export are identical and shared here. The two
+# asset classes differ in three places:
+#   - mid-price calc: index LEAPS chains routinely have zero-bid/zero-ask strikes
+#     (wide, illiquid markets) that break a plain (bid+ask)/2 calc into "inf%"
+#     return columns and a broken Excel export; indexes get a lastPrice fallback,
+#     stocks/ETFs keep the plain calc since that failure mode is rare there.
+#   - AI analysis framing: you can't own an index to sell covered calls against
+#     it, so the index variant reframes the Gemini prompt as a long call/LEAPS
+#     buying analysis instead.
+#   - a VIX context line shown only for indexes.
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -33,6 +37,40 @@ ASSET_CONFIG = {
         ),
         "favorites_category": "stocks",
         "use_lastprice_fallback": False,
+        "ai_header": "🤖 AI Covered Call Analysis",
+        "ai_button_label": "🔍 Generate AI Covered Call Strategy",
+        "ai_price_label": "CURRENT STOCK PRICE",
+        "ai_intro": "Analyze this covered call opportunity and provide a clear recommendation.",
+        "ai_strategy_context": (
+            "This is for selling covered calls - the investor owns the stock and wants to "
+            "generate premium income while potentially selling shares at a profit."
+        ),
+        "ai_format_block": """1. MARKET CONDITIONS: (2-3 sentences about current IV environment and what it means for premium sellers)
+
+2. RECOMMENDED STRIKE(S):
+   - Best conservative strike: [strike] - Premium: $[middle] - IV: [IV%]
+   - Best aggressive strike: [strike] - Premium: $[middle] - IV: [IV%]
+   Reasoning: (Why these strikes? Consider distance from current price, premium, and upside capture)
+
+3. INCOME POTENTIAL:
+   - Annualized return if called away: [calculate based on premium + capital gain]
+   - Annualized return if not called: [based on premium only]
+
+4. RISK ASSESSMENT:
+   - Probability of assignment: [High/Medium/Low based on strike vs current price]
+   - Upside capped at: [strike price, calculate % gain from current]
+   - What to watch: [key price levels or events]
+
+5. RECOMMENDATION: **SELL CALLS** or **WAIT**
+   Reasoning: (2-3 sentences on timing, IV level, and strategy fit)
+
+6. ACTION PLAN:
+   - Suggested strike: $[price]
+   - Order type: [limit/market]
+   - Entry price: $[middle or slightly above bid]
+   - Exit strategy: [when to roll or close]""",
+        "ai_focus_line": "Be specific with numbers. Focus on income generation and risk management for covered call sellers.",
+        "ai_initial_user_msg": "Analyze these covered call options",
     },
     "index": {
         "page_title": "Index Options Viewer",
@@ -46,6 +84,42 @@ ASSET_CONFIG = {
         ),
         "favorites_category": "index",
         "use_lastprice_fallback": True,
+        "ai_header": "🤖 AI Call-Buying Analysis",
+        "ai_button_label": "🔍 Generate AI Call-Buying Strategy",
+        "ai_price_label": "CURRENT INDEX LEVEL",
+        "ai_intro": "Analyze this long call / LEAPS buying opportunity and provide a clear recommendation.",
+        "ai_strategy_context": (
+            "This is for buying long calls (or LEAPS) on a broad-market index as leveraged, "
+            "capital-efficient exposure. The investor cannot own the index directly and is not "
+            "selling covered calls against it — the goal is identifying the call strike/expiration "
+            "with the best projected return if the index reaches the target growth level."
+        ),
+        "ai_format_block": """1. MARKET CONDITIONS: (2-3 sentences about current IV environment and what it means for call buyers)
+
+2. RECOMMENDED STRIKE(S):
+   - Best conservative (higher delta, less leverage) strike: [strike] - Premium: $[middle] - IV: [IV%]
+   - Best aggressive (lower delta, more leverage) strike: [strike] - Premium: $[middle] - IV: [IV%]
+   Reasoning: (Why these strikes? Consider delta, leverage, and cost relative to the projected move)
+
+3. RETURN POTENTIAL:
+   - Projected return if the index reaches the target growth level: [use optimal strike info]
+   - Breakeven index level: [strike + premium]
+
+4. RISK ASSESSMENT:
+   - Max loss: 100% of premium paid if the index finishes below the strike at expiration
+   - Time decay (theta) exposure: [High/Medium/Low based on days to expiry]
+   - What to watch: [key index levels, VIX moves, or macro events]
+
+5. RECOMMENDATION: **BUY CALLS** or **WAIT**
+   Reasoning: (2-3 sentences on timing, IV level, and strategy fit)
+
+6. ACTION PLAN:
+   - Suggested strike: $[price]
+   - Order type: [limit/market]
+   - Entry price: $[middle or slightly below ask]
+   - Exit strategy: [profit target or roll trigger]""",
+        "ai_focus_line": "Be specific with numbers. Focus on capital efficiency and risk management for long call/LEAPS buyers.",
+        "ai_initial_user_msg": "Analyze this LEAPS call-buying opportunity",
     },
 }
 
@@ -135,6 +209,8 @@ def render(asset_class):
     st.set_page_config(page_title=cfg["page_title"], layout="wide")
     st.title(cfg["heading"])
     st.info(cfg["purpose"])
+    if asset_class == "index":
+        utils.vix_badge()
     st.write("Enter a ticker to view call options, toggle columns, and see return potential graph (positive only).")
 
     # --- Gemini API Key Setup (in sidebar) ──────────────────────────────
@@ -493,7 +569,7 @@ def render(asset_class):
     # ─── AI ANALYSIS SECTION ───────────────────────────────────────────
     if calls is not None and summary_df is not None:
         st.markdown("---")
-        st.header("🤖 AI Covered Call Analysis")
+        st.header(cfg["ai_header"])
 
         # Initialize chat history in session state
         if k("chat_history_calls") not in st.session_state:
@@ -510,7 +586,7 @@ def render(asset_class):
             st.info("Get a free API key at: https://aistudio.google.com/app/apikey")
         else:
             # Initial Analysis Button
-            if st.button("🔍 Generate AI Covered Call Strategy", type="primary", width='stretch', key=k("gen_ai_btn")):
+            if st.button(cfg["ai_button_label"], type="primary", width='stretch', key=k("gen_ai_btn")):
                 with st.spinner("Analyzing options data with Gemini AI..."):
                     try:
                         # Prepare context for AI
@@ -540,10 +616,10 @@ def render(asset_class):
                         min_iv = active_calls['impliedVolatility'].min()
 
                         context = f"""
-Analyze this covered call opportunity and provide a clear recommendation.
+{cfg["ai_intro"]}
 
 TICKER: {ticker_input}
-CURRENT STOCK PRICE: ${last_price:.2f}
+{cfg["ai_price_label"]}: ${last_price:.2f}
 EXPIRATION: {expiry} ({days_to_expiry} days)
 
 IMPLIED VOLATILITY OVERVIEW:
@@ -555,36 +631,13 @@ TOP 5 STRIKES BY VOLUME:
 {optimal_strike_info}
 
 STRATEGY CONTEXT:
-This is for selling covered calls - the investor owns the stock and wants to generate premium income while potentially selling shares at a profit.
+{cfg["ai_strategy_context"]}
 
 Provide analysis in this format:
 
-1. MARKET CONDITIONS: (2-3 sentences about current IV environment and what it means for premium sellers)
+{cfg["ai_format_block"]}
 
-2. RECOMMENDED STRIKE(S):
-   - Best conservative strike: [strike] - Premium: $[middle] - IV: [IV%]
-   - Best aggressive strike: [strike] - Premium: $[middle] - IV: [IV%]
-   Reasoning: (Why these strikes? Consider distance from current price, premium, and upside capture)
-
-3. INCOME POTENTIAL:
-   - Annualized return if called away: [calculate based on premium + capital gain]
-   - Annualized return if not called: [based on premium only]
-
-4. RISK ASSESSMENT:
-   - Probability of assignment: [High/Medium/Low based on strike vs current price]
-   - Upside capped at: [strike price, calculate % gain from current]
-   - What to watch: [key price levels or events]
-
-5. RECOMMENDATION: **SELL CALLS** or **WAIT**
-   Reasoning: (2-3 sentences on timing, IV level, and strategy fit)
-
-6. ACTION PLAN:
-   - Suggested strike: $[price]
-   - Order type: [limit/market]
-   - Entry price: $[middle or slightly above bid]
-   - Exit strategy: [when to roll or close]
-
-Be specific with numbers. Focus on income generation and risk management for covered call sellers.
+{cfg["ai_focus_line"]}
 """
 
                         # Store initial context for follow-ups
@@ -595,7 +648,7 @@ Be specific with numbers. Focus on income generation and risk management for cov
 
                         # Clear previous chat and add initial exchange
                         st.session_state[k("chat_history_calls")] = [
-                            {"role": "user", "content": "Analyze these covered call options"},
+                            {"role": "user", "content": cfg["ai_initial_user_msg"]},
                             {"role": "assistant", "content": response_text}
                         ]
 
