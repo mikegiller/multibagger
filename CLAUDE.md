@@ -14,6 +14,12 @@ decision for them. Position sizing is undecided (may or may not be added).
 ## Audience & hosting
 - Maintained and used by the owner; two close friends have access but rarely use it.
 - Runs locally, private. Never to be made public or deployed publicly.
+- Production: home Ubuntu server, reached over Tailscale. It runs as systemd
+  `multibagger.service` (user `mgiller`, `/home/mgiller/apps/multibagger`, port 8510)
+  and is updated by `git pull` + `sudo systemctl restart multibagger.service`.
+  The Mac copy is for development.
+- Personal data (e.g. the trade journal) is gitignored and lives outside the repo
+  on the server. Never commit trade data.
 
 ## Stack
 - Streamlit multipage app: entry point `MainDashboard.py`, pages in `pages/`.
