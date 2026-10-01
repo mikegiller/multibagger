@@ -187,8 +187,9 @@ never touch it.
 cd ~/apps/multibagger && git pull
 venv/bin/pip install -r requirements.txt   # only if requirements changed
 
-# 2. Create the data directory
-mkdir -p ~/apps/multibagger-data/journal ~/apps/multibagger-data/backups
+# 2. Create the data directory and the backup directory on the external USB drive
+mkdir -p ~/apps/multibagger-data/journal
+mkdir -p /mnt/seagate/multibagger-backups
 
 # 3. Point the service at it with a systemd drop-in (leaves the main unit file untouched)
 sudo systemctl edit multibagger.service
@@ -201,17 +202,12 @@ sudo systemctl daemon-reload
 sudo systemctl restart multibagger.service
 systemctl show multibagger.service -p Environment   # verify the variable is set
 
-# 5. Nightly backup (crontab -e as mgiller), 02:30, keep 30 days
+# 5. Nightly backup to the external USB drive (crontab -e as mgiller), 02:30, keep 30 days
 #   needs: sudo apt install sqlite3
-30 2 * * * cd /home/mgiller/apps/multibagger-data && sqlite3 journal/journal.db ".backup backups/journal-$(date +\%F).db" && tar czf backups/chains-$(date +\%F).tgz -C journal chains && find backups -mtime +30 -delete
+#   `mountpoint -q` skips the backup if the drive isn't mounted, rather than silently
+#   writing into the empty /mnt/seagate folder on the system disk.
+30 2 * * * mountpoint -q /mnt/seagate && cd /home/mgiller/apps/multibagger-data && sqlite3 journal/journal.db ".backup /mnt/seagate/multibagger-backups/journal-$(date +\%F).db" && tar czf /mnt/seagate/multibagger-backups/chains-$(date +\%F).tgz -C journal chains && find /mnt/seagate/multibagger-backups -mtime +30 -delete
 ```
 
-Backups in the same place as the data only protect against corruption and
-mistakes, not disk failure. Copy `backups/` to another machine or disk as well
-(see open questions).
-
----
-
-## Open questions
-- Off-server backup destination: a second disk, the Mac via rsync over Tailscale,
-  or a cloud drive?
+Backups go to the external USB drive at `/mnt/seagate`, so a failure of the
+server's own disk doesn't lose the journal.
