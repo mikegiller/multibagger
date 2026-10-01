@@ -7,6 +7,7 @@ import streamlit as st
 import yfinance as yf
 import utils  # applies the yfinance cache workaround on import
 import chart_utils  # shared chart/projection helpers
+import journal
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -152,6 +153,20 @@ def render(asset_class):
             f"If the {trend} trend holds, price projects to **${best['Projected Price']:,.2f}** by then "
             f"→ **{best['Projected Return']:+.1f}%** projected return.",
             icon="🎯",
+        )
+        journal.log_trade_button(
+            "Log this trade", key=sk(f"log_{'lt' if is_weekly else 'st'}"),
+            ticker=ticker, expiration=best["Expiration Date"], strike=best["Optimum Strike"],
+            source_page=f"Master Plan ({'Weekly / LEAPS' if is_weekly else 'Daily'})",
+            context={
+                "master_plan": {
+                    "view": "weekly" if is_weekly else "daily",
+                    "underlying_price": current_price,
+                    "trend_slope_per_bar": float(linreg["slope"]),
+                    "recommended": {k: (v.item() if hasattr(v, "item") else v) for k, v in best.items()},
+                    "table": mp_df.to_dict("records"),
+                },
+            },
         )
 
         # --- Full expiration table, best row highlighted ---

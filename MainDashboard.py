@@ -29,6 +29,14 @@ with col_mp2:
     )
 st.caption("Project price along its trend, then find the optimum call strike to buy for every expiration based on the projected price. Combines the Chart Pattern Analyzer and Options Data Explorer.")
 
+st.page_link(
+    "pages/Trade_Journal.py",
+    label="Trade Journal",
+    icon="📓",
+    width='stretch'
+)
+st.caption("Log each trade with your thesis and expected return, then compare expected vs actual and your contract vs the other options available that day.")
+
 st.divider()
 
 st.subheader("Core Tools")

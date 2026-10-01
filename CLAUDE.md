@@ -29,6 +29,8 @@ decision for them. Position sizing is undecided (may or may not be added).
 - Gemini AI analysis is implemented (`utils.gemini_*`) but the owner rarely uses it.
   Keep it working; don't invest in expanding it unless asked.
 - Run: `source venv/bin/activate && streamlit run MainDashboard.py`
+  (Mac note, 2026-10-01: the local `venv` points at a removed Homebrew Python 3.14 and
+  needs rebuilding; only Python 3.11 is installed.)
 
 ## Layout
 - `master_plan.py` — shared Master Plan logic (trend projection → optimum call strike
@@ -42,6 +44,10 @@ decision for them. Position sizing is undecided (may or may not be added).
 - `utils.py` — yfinance cache workaround (import it before using yfinance), favorites,
   ticker input, index detection, VIX badge, Gemini helpers.
 - `favorites.json` — `{"stocks": [...], "index": [...]}` quick-select tickers.
+- `journal.py` + `pages/Trade_Journal.py` — Trade Journal (spec: `docs/trade_journal_spec.md`).
+  SQLite + gzipped chain snapshots in `MULTIBAGGER_JOURNAL_DIR` (default `./journal`,
+  gitignored). Tags live in `journal_config.json`. Master Plan and Options Data Explorer
+  have a "Log this trade" button (`journal.log_trade_button`).
 - Other pages: Chart Pattern Analyzer, Buy vs Sell Pressure, Capital Reallocation,
   Vertical Call/Put Spread finders (less used — keep them; don't remove pages without asking).
 

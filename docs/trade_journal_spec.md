@@ -1,6 +1,6 @@
 # Trade Journal — Spec
 
-Status: **draft, not yet implemented.** Agreed in conversation on 2026-10-01.
+Status: **implemented** (`journal.py`, `pages/Trade_Journal.py`). Agreed in conversation on 2026-10-01.
 
 ## Purpose
 A local log of every trade the owner places: what it is, why, and what return is
@@ -70,8 +70,8 @@ The Open tab lists open entries with:
 - Order price, current price, current return % (live from yfinance).
   - Calls/spreads: show return at **mid** and at **bid** (LEAPS spreads are wide).
   - Spreads: current value = long-leg price − short-leg price.
-  - Index options use the existing illiquid-strike handling (lastPrice fallback);
-    estimated values are flagged.
+  - With no two-sided quote (common on illiquid index LEAPS), the last trade price
+    is used and flagged "Last trade". Black-Scholes gap-filled estimates are not used here.
 - Expected return %, target date, days remaining.
 - Quantity still open (after partial closes).
 

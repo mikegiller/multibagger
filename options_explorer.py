@@ -22,6 +22,7 @@ from datetime import datetime, timedelta
 import yfinance as yf
 import utils  # applies the yfinance cache workaround on import
 import option_pricing
+import journal
 from io import BytesIO
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 from openpyxl import load_workbook
@@ -553,6 +554,20 @@ def render(asset_class):
                 st.plotly_chart(fig, width='stretch')
             else:
                 st.info("Select at least one percentage column above to show the return chart.")
+
+            journal.log_trade_button(
+                "Log this trade", key=k("log_trade"),
+                ticker=ticker_input, expiration=expiry, strike=best_strike,
+                source_page=f"Options Data Explorer ({'Index' if asset_class == 'index' else 'Stocks'})",
+                context={
+                    "options_explorer": {
+                        "underlying_price": float(summary_df["Last Price"].iloc[0]),
+                        "expiration": expiry,
+                        "optimal_strike": None if best_strike is None else float(best_strike),
+                        "growth_columns_shown": show_cols,
+                    },
+                },
+            )
 
         # --- Excel download ---
         if calls is not None:
