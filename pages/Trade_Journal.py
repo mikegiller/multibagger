@@ -222,8 +222,14 @@ with tab_log:
             st.rerun()
 
     c1, c2 = st.columns([1, 2])
+    def _keep_type_selected():
+        # Clicking the active option deselects it; snap back to Call. (Callback rather
+        # than required=True, which older Streamlit versions don't support.)
+        if st.session_state["tj_type"] is None:
+            st.session_state["tj_type"] = "call"
+
     trade_type = c1.segmented_control("Trade type", TYPE_OPTIONS, format_func=TYPE_LABEL.get,
-                                      key="tj_type", required=True)
+                                      key="tj_type", on_change=_keep_type_selected) or "call"
     ticker = c2.text_input("Ticker", key="tj_ticker", max_chars=12).upper().strip()
 
     legs, ref_price, valid_contract = [], None, bool(ticker)
